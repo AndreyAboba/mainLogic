@@ -1,496 +1,500 @@
--- Модуль Auto: AutoInteract
-local Auto = {
-    AutoInteract = {
+-- Модуль Vehicles: VehicleSpeed и VehicleFly
+local Vehicles = {
+    VehicleSpeed = {
         Settings = {
             Enabled = { Value = false, Default = false },
-            TargetObject = { Value = "AirDrop", Default = "AirDrop" },
-            MaxDistance = { Value = 10, Default = 10 },
-            MinusHoldTime = { Value = 10, Default = 10 },
-            MinDistanceBetweenObjects = { Value = 5, Default = 5 },
-            ActivationDelay = { Value = 1.0, Default = 1.0 },
-            EnableDebugLogs = { Value = true, Default = true }
+            SpeedBoostMultiplier = { Value = 1.65, Default = 1.65 },
+            HoldSpeed = { Value = false, Default = false },
+            HoldKeybind = { Value = Enum.KeyCode.LeftShift, Default = Enum.KeyCode.LeftShift },
+            ToggleKey = { Value = Enum.KeyCode.F, Default = Enum.KeyCode.F }
         },
         State = {
-            ProcessedObjects = {},
-            LastDistance = {},
-            ActiveObjects = {},
-            BinCache = {},
-            LastBinCacheUpdate = 0,
-            BinCacheUpdateInterval = 10,
-            LastUpdateTime = 0,
-            UpdateInterval = 0.1,
-            OriginalHoldTimes = {},
-            CurrentAirDrop = nil
+            IsBoosting = false,
+            OriginalAttributes = {},
+            CurrentVehicle = nil,
+            Connection = nil
+        }
+    },
+    VehicleFly = {
+        Settings = {
+            Enabled = { Value = false, Default = false },
+            FlySpeed = { Value = 50, Default = 50 },
+            ToggleKey = { Value = Enum.KeyCode.G, Default = Enum.KeyCode.G }
+        },
+        State = {
+            IsFlying = false,
+            FlyBodyVelocity = nil,
+            LastWheelReset = 0,
+            OriginalWheelData = {},
+            Connection = nil
         }
     }
 }
 
-function Auto.Init(UI, Core, notify)
-    local AutoInteract = Auto.AutoInteract
+function Vehicles.Init(UI, Core, notify)
+    local VehicleSpeed = Vehicles.VehicleSpeed
+    local VehicleFly = Vehicles.VehicleFly
 
-    -- Функция отладочного лога
-    local function debugLog(...)
-        if AutoInteract.Settings.EnableDebugLogs.Value then
-            print(...)
-        end
-    end
-
-    -- Проверка, жив ли игрок
-    local function isPlayerInGame()
-        local character = Core.PlayerData.LocalPlayer.Character
-        if not character then
-            debugLog("Character not found!")
-            return false
-        end
-        local humanoid = character:FindFirstChild("Humanoid")
-        if not humanoid then
-            debugLog("Humanoid not found!")
-            return false
-        end
-        if humanoid.Health <= 0 then
-            debugLog("Player is dead!")
-            return false
-        end
-        if humanoid.WalkSpeed == 0 and humanoid.JumpPower == 0 then
-            debugLog("Player might be in menu!")
-            return false
-        end
-        return true
-    end
-
-    -- Проверка, является ли объект целевым
-    local function isTargetObject(objectName)
-        local targetObjects = { "Dumpster", "Bin", "AirDrop" }
-        for _, target in pairs(targetObjects) do
-            if objectName == target then
-                return true
+    -- Общая функция: получение текущего транспорта
+    local function getCurrentVehicle()
+        local char = Core.PlayerData.LocalPlayer.Character
+        if char and char.Humanoid and char.Humanoid.SeatPart and char.Humanoid.SeatPart:IsA("VehicleSeat") then
+            local vehicle = char.Humanoid.SeatPart.Parent
+            if vehicle:IsDescendantOf(Core.Services.Workspace.Vehicles) then
+                return vehicle, char.Humanoid.SeatPart
             end
+        end
+        return nil, nil
+    end
+
+    -- Проверка, является ли транспорт ATV
+    local function isATV(vehicle)
+        if vehicle and vehicle.Name:lower():find("atv") then
+            return true
         end
         return false
     end
 
-    -- Получение расстояния до объекта
-    local function getDistanceToObject(obj, objectType)
-        if not obj.Parent then
-            return math.huge
-        end
-
-        local character = Core.PlayerData.LocalPlayer.Character
-        if not character or not character:FindFirstChild("HumanoidRootPart") then
-            return math.huge
-        end
-        local humanoidRootPart = character.HumanoidRootPart
-
-        local objPosition
-        local success, err = pcall(function()
-            if objectType == "AirDrop" then
-                local boxInteriorBottom = obj:FindFirstChild("Model") and obj.Model:FindFirstChild("BoxInteriorBottom")
-                objPosition = boxInteriorBottom and boxInteriorBottom.Position or obj:GetPivot().Position
-            elseif objectType == "Bin" then
-                local mesh = obj:FindFirstChild("Meshes/bin_Cube")
-                objPosition = mesh and mesh.Position or obj:GetPivot().Position
-            elseif objectType == "Dumpster" then
-                local trash = obj:FindFirstChild("Trash")
-                objPosition = trash and trash.Position or obj:GetPivot().Position
-            else
-                objPosition = obj:GetPivot().Position
-            end
-        end)
-        if not success then
-            debugLog("Error getting object position:", err)
-            return math.huge
-        end
-        return (humanoidRootPart.Position - objPosition).Magnitude
-    end
-
-    -- Проверка расстояния между объектами
-    local function getDistanceBetweenObjects(obj1, obj2)
-        local pos1, pos2
-        local success1 = pcall(function() pos1 = obj1:GetPivot().Position end)
-        local success2 = pcall(function() pos2 = obj2:GetPivot().Position end)
-        if not success1 or not success2 then return math.huge end
-        return (pos1 - pos2).Magnitude
-    end
-
-    -- Обновление кэша Bin
-    local function updateBinCache()
-        if tick() - AutoInteract.State.LastBinCacheUpdate < AutoInteract.State.BinCacheUpdateInterval then return end
-        debugLog("Updating Bin cache...")
-        AutoInteract.State.BinCache = {}
-        for _, obj in pairs(Core.Services.Workspace:GetDescendants()) do
-            if obj.Name == "Bin" and isTargetObject(obj.Name) then
-                local mesh = obj:FindFirstChild("Meshes/bin_Cube")
-                if mesh and mesh:FindFirstChild("ProximityPrompt") then
-                    table.insert(AutoInteract.State.BinCache, obj)
+    -- Стабилизация колёс
+    local function stabilizeWheels(vehicle, seat)
+        for _, part in ipairs(vehicle:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                for _, constraint in ipairs(part:GetChildren()) do
+                    if constraint:IsA("SpringConstraint") then
+                        constraint.Damping = math.clamp(constraint.Damping * 1.2, 0, 1000)
+                        constraint.Stiffness = math.clamp(constraint.Stiffness * 1.2, 0, 5000)
+                    elseif constraint:IsA("HingeConstraint") then
+                        constraint.AngularVelocity = math.clamp(constraint.AngularVelocity, -50, 50)
+                    end
                 end
             end
         end
-        AutoInteract.State.LastBinCacheUpdate = tick()
-        debugLog("Found Bins:", #AutoInteract.State.BinCache)
     end
 
-    -- Активация ProximityPrompt
-    local function forceTriggerPrompt(prompt, targetObject, objectType)
-        debugLog("forceTriggerPrompt called for", targetObject.Name, "type:", objectType)
-        if not targetObject.Parent then
-            debugLog("Object", targetObject.Name, "no longer exists!")
-            AutoInteract.State.ProcessedObjects[targetObject] = nil
-            AutoInteract.State.LastDistance[targetObject] = nil
-            AutoInteract.State.OriginalHoldTimes[targetObject] = nil
-            return false
+    -- Сброс характеристик транспорта
+    local function resetVehicleAttributes(vehicle)
+        if not vehicle then return end
+        local motors = vehicle:FindFirstChild("Motors")
+        if not motors then return end
+
+        local attributes = VehicleSpeed.State.OriginalAttributes[vehicle]
+        if attributes then
+            motors:SetAttribute("forwardMaxSpeed", attributes.forwardMaxSpeed)
+            motors:SetAttribute("nitroMaxSpeed", attributes.nitroMaxSpeed)
+            motors:SetAttribute("acceleration", attributes.acceleration)
         end
-
-        if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
-            debugLog("ProximityPrompt found and active")
-            for activeObj, _ in pairs(AutoInteract.State.ActiveObjects) do
-                local distance = getDistanceBetweenObjects(targetObject, activeObj)
-                if distance < AutoInteract.Settings.MinDistanceBetweenObjects.Value then
-                    debugLog("Object", targetObject.Name, "too close to", activeObj.Name, "- waiting...")
-                    task.wait(AutoInteract.Settings.ActivationDelay.Value)
-                    break
-                end
-            end
-
-            AutoInteract.State.ActiveObjects[targetObject] = true
-
-            local character = Core.PlayerData.LocalPlayer.Character
-            if not character or not character:FindFirstChild("HumanoidRootPart") then
-                debugLog("Character or HumanoidRootPart not found")
-                AutoInteract.State.ActiveObjects[targetObject] = nil
-                return false
-            end
-            local humanoidRootPart = character.HumanoidRootPart
-
-            local objectPosition
-            local success, err = pcall(function()
-                if objectType == "AirDrop" then
-                    local boxInteriorBottom = targetObject:FindFirstChild("Model") and targetObject.Model:FindFirstChild("BoxInteriorBottom")
-                    objectPosition = boxInteriorBottom and boxInteriorBottom.Position or targetObject:GetPivot().Position
-                else
-                    objectPosition = targetObject:GetPivot().Position
-                end
-            end)
-            if not success then
-                debugLog("GetPivot error:", err)
-                AutoInteract.State.ActiveObjects[targetObject] = nil
-                return false
-            end
-
-            local distance = (humanoidRootPart.Position - objectPosition).Magnitude
-            debugLog("Distance to object:", distance)
-
-            if distance <= AutoInteract.Settings.MaxDistance.Value then
-                debugLog("In range:", targetObject.Name)
-                if prompt.Enabled then
-                    prompt.RequiresLineOfSight = false
-                    local originalDistance = prompt.MaxActivationDistance
-                    prompt.MaxActivationDistance = distance + 5
-
-                    if not AutoInteract.State.OriginalHoldTimes[targetObject] then
-                        AutoInteract.State.OriginalHoldTimes[targetObject] = prompt.HoldDuration
-                        debugLog("Saved original HoldDuration for", targetObject.Name, ":", AutoInteract.State.OriginalHoldTimes[targetObject])
-                    end
-                    local originalHoldTime = AutoInteract.State.OriginalHoldTimes[targetObject]
-                    if originalHoldTime == 0 then
-                        debugLog("HoldDuration is 0 for", targetObject.Name, "- using default 1")
-                        originalHoldTime = 1
-                        AutoInteract.State.OriginalHoldTimes[targetObject] = 1
-                    end
-
-                    local reductionPercentage = AutoInteract.Settings.MinusHoldTime.Value
-                    local reductionFactor = 1 - (reductionPercentage / 100)
-                    local newHoldTime = math.max(0, originalHoldTime * reductionFactor)
-                    debugLog("Original HoldDuration:", originalHoldTime, "MinusHoldTime:", reductionPercentage .. "%", "Reduction Factor:", reductionFactor, "New HoldDuration:", newHoldTime)
-
-                    prompt.HoldDuration = newHoldTime
-
-                    local triggered = false
-                    local connection
-                    connection = prompt.Triggered:Connect(function()
-                        triggered = true
-                        connection:Disconnect()
-                    end)
-
-                    debugLog("Holding Prompt for", newHoldTime, "seconds")
-                    local startTime = tick()
-                    prompt:InputHoldBegin()
-
-                    local elapsed = 0
-                    while elapsed < newHoldTime do
-                        local waitTime = math.min(0.0167, newHoldTime - elapsed)
-                        task.wait(waitTime)
-                        elapsed = tick() - startTime
-                        distance = getDistanceToObject(targetObject, objectType)
-                        if distance > AutoInteract.Settings.MaxDistance.Value then
-                            debugLog("Player moved away from", targetObject.Name, "during activation - aborting!")
-                            prompt:InputHoldEnd()
-                            prompt.MaxActivationDistance = originalDistance
-                            prompt.HoldDuration = originalHoldTime
-                            AutoInteract.State.ActiveObjects[targetObject] = nil
-                            AutoInteract.State.ProcessedObjects[targetObject] = nil
-                            return false
-                        end
-                    end
-                    task.wait(0.4)
-                    debugLog("Hold time elapsed:", tick() - startTime, "seconds")
-                    prompt:InputHoldEnd()
-                    task.wait(0.4)
-                    if triggered then
-                        debugLog("Activated Prompt for:", targetObject.Name)
-                        AutoInteract.State.ProcessedObjects[targetObject] = true
-                    else
-                        debugLog("Failed to activate Prompt for:", targetObject.Name)
-                    end
-
-                    prompt.MaxActivationDistance = originalDistance
-                    prompt.HoldDuration = originalHoldTime
-                    debugLog("Restored HoldDuration:", prompt.HoldDuration)
-                else
-                    debugLog("Prompt disabled in:", targetObject.Name)
-                end
-            else
-                debugLog("Too far from:", targetObject.Name, "Distance:", distance)
-            end
-        else
-            debugLog("ProximityPrompt not found, invalid, or disabled in:", targetObject.Name)
-        end
-
-        AutoInteract.State.ActiveObjects[targetObject] = nil
-        return triggered
     end
 
-    -- Основной цикл AutoInteract
-    AutoInteract.Start = function()
-        if not AutoInteract.Settings.Enabled.Value then return end
+    -- Применение характеристик с учётом множителя
+    local function applyVehicleAttributes(vehicle, multiplier)
+        if not vehicle then return end
+        local motors = vehicle:FindFirstChild("Motors")
+        if not motors or not VehicleSpeed.State.OriginalAttributes[vehicle] then return end
 
-        Core.Services.RunService.Heartbeat:Connect(function()
-            if not AutoInteract.Settings.Enabled.Value then return end
+        local effectiveMultiplier = isATV(vehicle) and math.min(multiplier, 1.55) or multiplier
+        motors:SetAttribute("forwardMaxSpeed", VehicleSpeed.State.OriginalAttributes[vehicle].forwardMaxSpeed * effectiveMultiplier)
+        motors:SetAttribute("nitroMaxSpeed", VehicleSpeed.State.OriginalAttributes[vehicle].nitroMaxSpeed * effectiveMultiplier)
+        motors:SetAttribute("acceleration", VehicleSpeed.State.OriginalAttributes[vehicle].acceleration * effectiveMultiplier)
+    end
 
-            local currentTime = tick()
-            if currentTime - AutoInteract.State.LastUpdateTime < AutoInteract.State.UpdateInterval then return end
-            AutoInteract.State.LastUpdateTime = currentTime
+    -- Функции VehicleSpeed
+    VehicleSpeed.Start = function()
+        if VehicleSpeed.State.Connection then
+            VehicleSpeed.State.Connection:Disconnect()
+            VehicleSpeed.State.Connection = nil
+        end
 
-            if not isPlayerInGame() then
-                debugLog("Player not in game, waiting...")
+        VehicleSpeed.State.Connection = Core.Services.RunService.Heartbeat:Connect(function()
+            if not VehicleSpeed.Settings.Enabled.Value then return end
+
+            local vehicle, seat = getCurrentVehicle()
+            if not vehicle then
+                if VehicleSpeed.State.IsBoosting and VehicleSpeed.State.CurrentVehicle then
+                    resetVehicleAttributes(VehicleSpeed.State.CurrentVehicle)
+                    VehicleSpeed.State.IsBoosting = false
+                    VehicleSpeed.State.CurrentVehicle = nil
+                end
                 return
             end
 
-            -- Обработка Dumpster
-            if AutoInteract.Settings.TargetObject.Value == "Dumpster" then
-                local props = Core.Services.Workspace:FindFirstChild("Map") and Core.Services.Workspace.Map:FindFirstChild("Props")
-                if props then
-                    for _, targetObject in pairs(props:GetChildren()) do
-                        if isTargetObject(targetObject.Name) then
-                            local distance = getDistanceToObject(targetObject, "Dumpster")
-                            local wasOutside = AutoInteract.State.LastDistance[targetObject] and AutoInteract.State.LastDistance[targetObject] > AutoInteract.Settings.MaxDistance.Value
-                            if distance > AutoInteract.Settings.MaxDistance.Value and AutoInteract.State.ProcessedObjects[targetObject] then
-                                debugLog("Player left range of", targetObject.Name, "- resetting status")
-                                AutoInteract.State.ProcessedObjects[targetObject] = nil
-                            end
-                            AutoInteract.State.LastDistance[targetObject] = distance
+            local motors = vehicle:FindFirstChild("Motors")
+            if not motors then return end
 
-                            if distance <= AutoInteract.Settings.MaxDistance.Value then
-                                local trash = targetObject:FindFirstChild("Trash")
-                                if trash then
-                                    local attachment = trash:FindFirstChild("Attachment")
-                                    if attachment then
-                                        local prompt = attachment:FindFirstChild("ProximityPrompt")
-                                        if prompt then
-                                            forceTriggerPrompt(prompt, targetObject, "Dumpster")
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                else
-                    debugLog("workspace.Map.Props not found!")
+            if vehicle ~= VehicleSpeed.State.CurrentVehicle then
+                if VehicleSpeed.State.CurrentVehicle then
+                    resetVehicleAttributes(VehicleSpeed.State.CurrentVehicle)
+                end
+                VehicleSpeed.State.CurrentVehicle = vehicle
+                if not VehicleSpeed.State.OriginalAttributes[vehicle] then
+                    VehicleSpeed.State.OriginalAttributes[vehicle] = {
+                        forwardMaxSpeed = motors:GetAttribute("forwardMaxSpeed") or 35,
+                        nitroMaxSpeed = motors:GetAttribute("nitroMaxSpeed") or 105,
+                        acceleration = motors:GetAttribute("acceleration") or 15
+                    }
                 end
             end
 
-            -- Обработка Bin
-            if AutoInteract.Settings.TargetObject.Value == "Bin" then
-                updateBinCache()
-                for _, targetObject in pairs(AutoInteract.State.BinCache) do
-                    if not targetObject.Parent then
-                        AutoInteract.State.LastDistance[targetObject] = nil
-                        AutoInteract.State.ProcessedObjects[targetObject] = nil
-                        continue
-                    end
-                    local distance = getDistanceToObject(targetObject, "Bin")
-                    local wasOutside = AutoInteract.State.LastDistance[targetObject] and AutoInteract.State.LastDistance[targetObject] > AutoInteract.Settings.MaxDistance.Value
-                    if distance > AutoInteract.Settings.MaxDistance.Value and AutoInteract.State.ProcessedObjects[targetObject] then
-                        debugLog("Player left range of", targetObject.Name, "- resetting status")
-                        AutoInteract.State.ProcessedObjects[targetObject] = nil
-                    end
-                    AutoInteract.State.LastDistance[targetObject] = distance
+            local shouldBoost = VehicleSpeed.Settings.HoldSpeed.Value and Core.Services.UserInputService:IsKeyDown(VehicleSpeed.Settings.HoldKeybind.Value) or true
 
-                    if distance <= AutoInteract.Settings.MaxDistance.Value then
-                        local mesh = targetObject:FindFirstChild("Meshes/bin_Cube")
-                        if mesh then
-                            local prompt = mesh:FindFirstChild("ProximityPrompt")
-                            if prompt then
-                                forceTriggerPrompt(prompt, targetObject, "Bin")
-                            end
-                        end
-                    end
+            if shouldBoost then
+                if not VehicleSpeed.State.IsBoosting then
+                    VehicleSpeed.State.IsBoosting = true
                 end
-            end
-
-            -- Обработка AirDrop
-            if AutoInteract.Settings.TargetObject.Value == "AirDrop" then
-                local airDropRoot = Core.Services.Workspace:FindFirstChild("AirDropModel")
-                if airDropRoot then
-                    local weaponCrate = airDropRoot:FindFirstChild("Weapon Crate")
-                    if weaponCrate then
-                        local targetObject = weaponCrate
-                        if isTargetObject("AirDrop") then
-                            local distance = getDistanceToObject(targetObject, "AirDrop")
-                            local wasOutside = AutoInteract.State.LastDistance[targetObject] and AutoInteract.State.LastDistance[targetObject] > AutoInteract.Settings.MaxDistance.Value
-                            if distance > AutoInteract.Settings.MaxDistance.Value and AutoInteract.State.ProcessedObjects[targetObject] then
-                                debugLog("Player left AirDrop range - resetting status")
-                                AutoInteract.State.ProcessedObjects[targetObject] = nil
-                            end
-                            AutoInteract.State.LastDistance[targetObject] = distance
-
-                            if distance <= AutoInteract.Settings.MaxDistance.Value then
-                                local model = targetObject:FindFirstChild("Model")
-                                if model then
-                                    local boxInteriorBottom = model:FindFirstChild("BoxInteriorBottom")
-                                    if boxInteriorBottom then
-                                        local prompt = boxInteriorBottom:FindFirstChild("ProximityPrompt")
-                                        if prompt then
-                                            forceTriggerPrompt(prompt, targetObject, "AirDrop")
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-
-            -- Периодическая очистка ProcessedObjects
-            if currentTime % 60 == 0 then
-                for obj, _ in pairs(AutoInteract.State.ProcessedObjects) do
-                    if obj.Name ~= "Weapon Crate" then
-                        AutoInteract.State.ProcessedObjects[obj] = nil
-                        AutoInteract.State.LastDistance[obj] = nil
-                    end
-                end
-                debugLog("Cleared ProcessedObjects list (except AirDrop)")
+                applyVehicleAttributes(vehicle, VehicleSpeed.Settings.SpeedBoostMultiplier.Value)
+                stabilizeWheels(vehicle, seat)
+            elseif not shouldBoost and VehicleSpeed.State.IsBoosting then
+                resetVehicleAttributes(vehicle)
+                VehicleSpeed.State.IsBoosting = false
             end
         end)
+
+        notify("VehicleSpeed", "Started with SpeedBoostMultiplier: " .. VehicleSpeed.Settings.SpeedBoostMultiplier.Value, true)
     end
 
-    -- Отслеживание AirDrop
-    Core.Services.Workspace.ChildAdded:Connect(function(child)
-        if child.Name == "AirDropModel" then
-            debugLog("New AirDropModel detected!")
-            for obj, _ in pairs(AutoInteract.State.ProcessedObjects) do
-                if obj.Name == "Weapon Crate" then
-                    AutoInteract.State.ProcessedObjects[obj] = nil
-                    AutoInteract.State.LastDistance[obj] = nil
-                    AutoInteract.State.OriginalHoldTimes[obj] = nil
+    VehicleSpeed.Stop = function()
+        if VehicleSpeed.State.Connection then
+            VehicleSpeed.State.Connection:Disconnect()
+            VehicleSpeed.State.Connection = nil
+        end
+
+        if VehicleSpeed.State.CurrentVehicle and VehicleSpeed.State.IsBoosting then
+            resetVehicleAttributes(VehicleSpeed.State.CurrentVehicle)
+        end
+
+        VehicleSpeed.State.IsBoosting = false
+        VehicleSpeed.State.CurrentVehicle = nil
+        VehicleSpeed.State.OriginalAttributes = {}
+        notify("VehicleSpeed", "Stopped", true)
+    end
+
+    VehicleSpeed.SetSpeedBoostMultiplier = function(newMultiplier)
+        VehicleSpeed.Settings.SpeedBoostMultiplier.Value = newMultiplier
+        notify("VehicleSpeed", "SpeedBoostMultiplier set to: " .. newMultiplier, false)
+
+        if VehicleSpeed.State.IsBoosting then
+            local vehicle, _ = getCurrentVehicle()
+            if vehicle then
+                applyVehicleAttributes(vehicle, newMultiplier)
+            end
+        end
+    end
+
+    -- Функции VehicleFly
+    VehicleFly.EnableFlight = function(vehicle, seat, enable)
+        if not vehicle or not seat then return end
+
+        if enable and not VehicleFly.State.IsFlying then
+            VehicleFly.State.IsFlying = true
+            VehicleFly.State.FlyBodyVelocity = Instance.new("BodyVelocity")
+            VehicleFly.State.FlyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            VehicleFly.State.FlyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            VehicleFly.State.FlyBodyVelocity.Parent = seat
+
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                    VehicleFly.State.OriginalWheelData[part] = {
+                        Position = part.Position - seat.Position,
+                        Mass = part.Mass,
+                        Constraints = {}
+                    }
+                    for _, constraint in ipairs(part:GetChildren()) do
+                        if constraint:IsA("HingeConstraint") then
+                            VehicleFly.State.OriginalWheelData[part].Constraints.Hinge = {
+                                TargetAngle = constraint.TargetAngle,
+                                AngularVelocity = constraint.AngularVelocity
+                            }
+                        elseif constraint:IsA("SpringConstraint") then
+                            VehicleFly.State.OriginalWheelData[part].Constraints.Spring = {
+                                FreeLength = constraint.FreeLength,
+                                Stiffness = constraint.Stiffness,
+                                Damping = constraint.Damping
+                            }
+                        end
+                    end
                 end
             end
-            AutoInteract.State.CurrentAirDrop = child
-        end
-    end)
 
-    Core.Services.Workspace.ChildRemoved:Connect(function(child)
-        if child == AutoInteract.State.CurrentAirDrop then
-            debugLog("AirDropModel removed!")
-            for obj, _ in pairs(AutoInteract.State.ProcessedObjects) do
-                if obj.Name == "Weapon Crate" then
-                    AutoInteract.State.ProcessedObjects[obj] = nil
-                    AutoInteract.State.LastDistance[obj] = nil
-                    AutoInteract.State.OriginalHoldTimes[obj] = nil
+            seat.AssemblyLinearVelocity = Vector3.new(seat.AssemblyLinearVelocity.X, 10, seat.AssemblyLinearVelocity.Z)
+        elseif not enable and VehicleFly.State.IsFlying then
+            VehicleFly.State.IsFlying = false
+            if VehicleFly.State.FlyBodyVelocity then
+                VehicleFly.State.FlyBodyVelocity:Destroy()
+                VehicleFly.State.FlyBodyVelocity = nil
+            end
+
+            local pos = seat.Position
+            local _, yaw, _ = seat.CFrame:ToEulerAnglesYXZ()
+            seat.CFrame = CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
+            seat.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            seat.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                    part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    local data = VehicleFly.State.OriginalWheelData[part]
+                    if data then
+                        for _, constraint in ipairs(part:GetChildren()) do
+                            if constraint:IsA("HingeConstraint") and data.Constraints.Hinge then
+                                constraint.AngularVelocity = 0
+                                constraint.TargetAngle = data.Constraints.Hinge.TargetAngle
+                            elseif constraint:IsA("SpringConstraint") and data.Constraints.Spring then
+                                constraint.FreeLength = data.Constraints.Spring.FreeLength
+                                constraint.Stiffness = data.Constraints.Spring.Stiffness
+                                constraint.Damping = data.Constraints.Spring.Damping
+                            end
+                        end
+                    end
                 end
             end
-            AutoInteract.State.CurrentAirDrop = nil
+
+            for i = 1, 5 do
+                task.wait(0.1)
+                if not vehicle.Parent then break end
+                for _, part in ipairs(vehicle:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                        local data = VehicleFly.State.OriginalWheelData[part]
+                        if data then
+                            local errorDist = (part.Position - seat.Position - data.Position).Magnitude
+                            if errorDist > 0.05 and errorDist < 10 then
+                                local massFactor = math.clamp(1 / (data.Mass or 1), 0.1, 1)
+                                for _, constraint in ipairs(part:GetChildren()) do
+                                    if constraint:IsA("SpringConstraint") then
+                                        constraint.FreeLength = constraint.FreeLength - errorDist * massFactor * 0.2
+                                    end
+                                end
+                            end
+                            local roll, pitch = part.CFrame:ToEulerAnglesXYZ()
+                            if math.abs(roll) > math.rad(5) or math.abs(pitch) > math.rad(5) then
+                                for _, constraint in ipairs(part:GetChildren()) do
+                                    if constraint:IsA("HingeConstraint") and data and data.Constraints.Hinge then
+                                        constraint.TargetAngle = data.Constraints.Hinge.TargetAngle
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
+    end
+
+    VehicleFly.UpdateFlight = function(vehicle, seat)
+        if not vehicle or not seat or not VehicleFly.State.IsFlying or not VehicleFly.State.FlyBodyVelocity then return end
+
+        local humanoid = Core.PlayerData.LocalPlayer.Character and Core.PlayerData.LocalPlayer.Character:FindFirstChild("Humanoid")
+        if not humanoid or humanoid.SeatPart ~= seat then
+            VehicleFly.EnableFlight(vehicle, seat, false)
+            return
+        end
+
+        local look = Core.PlayerData.Camera.CFrame.LookVector
+        local right = Core.PlayerData.Camera.CFrame.RightVector
+        local moveDir = Vector3.new(0, 0, 0)
+
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += look end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir -= look end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir -= right end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += right end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir += Vector3.new(0, 1, 0) end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir -= Vector3.new(0, 1, 0) end
+
+        VehicleFly.State.FlyBodyVelocity.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * VehicleFly.Settings.FlySpeed.Value or Vector3.new(0, 0, 0)
+
+        local pos = seat.Position
+        local flatLook = Vector3.new(look.X, 0, look.Z).Unit
+        seat.CFrame = CFrame.new(pos, pos + flatLook)
+
+        if tick() - VehicleFly.State.LastWheelReset > 0.05 then
+            VehicleFly.State.LastWheelReset = tick()
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name:lower():find("wheel") then
+                    part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    local data = VehicleFly.State.OriginalWheelData[part]
+                    if data then
+                        local errorDist = (part.Position - seat.Position - data.Position).Magnitude
+                        if errorDist > 0.05 and errorDist < 10 then
+                            local massFactor = math.clamp(1 / (data.Mass or 1), 0.1, 1)
+                            for _, constraint in ipairs(part:GetChildren()) do
+                                if constraint:IsA("SpringConstraint") then
+                                    constraint.FreeLength = constraint.FreeLength - errorDist * massFactor * 0.2
+                                end
+                            end
+                        end
+                        local roll, pitch = part.CFrame:ToEulerAnglesXYZ()
+                        if math.abs(roll) > math.rad(5) or math.abs(pitch) > math.rad(5) then
+                            for _, constraint in ipairs(part:GetChildren()) do
+                                if constraint:IsA("HingeConstraint") and data.Constraints.Hinge then
+                                    constraint.AngularVelocity = 0
+                                    constraint.TargetAngle = data.Constraints.Hinge.TargetAngle
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    VehicleFly.Start = function()
+        if VehicleFly.State.Connection then
+            VehicleFly.State.Connection:Disconnect()
+            VehicleFly.State.Connection = nil
+        end
+
+        VehicleFly.State.Connection = Core.Services.RunService.Heartbeat:Connect(function()
+            if not VehicleFly.Settings.Enabled.Value then return end
+
+            local vehicle, seat = getCurrentVehicle()
+            if vehicle and seat then
+                if not VehicleFly.State.IsFlying then
+                    VehicleFly.EnableFlight(vehicle, seat, true)
+                end
+                VehicleFly.UpdateFlight(vehicle, seat)
+            else
+                if VehicleFly.State.IsFlying then
+                    local lastVehicle, lastSeat = getCurrentVehicle()
+                    if lastVehicle and lastSeat then
+                        VehicleFly.EnableFlight(lastVehicle, lastSeat, false)
+                    end
+                end
+            end
+        end)
+
+        notify("VehicleFly", "Started with FlySpeed: " .. VehicleFly.Settings.FlySpeed.Value, true)
+    end
+
+    VehicleFly.Stop = function()
+        if VehicleFly.State.Connection then
+            VehicleFly.State.Connection:Disconnect()
+            VehicleFly.State.Connection = nil
+        end
+
+        local vehicle, seat = getCurrentVehicle()
+        if vehicle and seat and VehicleFly.State.IsFlying then
+            VehicleFly.EnableFlight(vehicle, seat, false)
+        end
+
+        VehicleFly.State.IsFlying = false
+        VehicleFly.State.OriginalWheelData = {}
+        notify("VehicleFly", "Stopped", true)
+    end
+
+    VehicleFly.SetFlySpeed = function(newSpeed)
+        VehicleFly.Settings.FlySpeed.Value = newSpeed
+        notify("VehicleFly", "FlySpeed set to: " .. newSpeed, false)
+    end
+
+    -- Обработка посадки/высадки из транспорта
+    Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(character)
+        local humanoid = character:WaitForChild("Humanoid")
+        humanoid.Seated:Connect(function(isSeated, seatPart)
+            if not isSeated then
+                if VehicleSpeed.Settings.Enabled.Value and VehicleSpeed.State.IsBoosting then
+                    VehicleSpeed.Stop()
+                    VehicleSpeed.Start()
+                end
+                if VehicleFly.Settings.Enabled.Value and VehicleFly.State.IsFlying then
+                    VehicleFly.Stop()
+                    VehicleFly.Start()
+                end
+            end
+        end)
     end)
 
-    -- Настройка UI
-    if UI.Sections.AutoInteract then
-        UI.Sections.AutoInteract:Header({ Name = "AutoInteract Settings" })
-        UI.Sections.AutoInteract:Toggle({
+    -- Настройка UI для VehicleSpeed
+    if UI.Sections.VehicleSpeed then
+        UI.Sections.VehicleSpeed:Header({ Name = "Vehicle Speed Settings" })
+        UI.Sections.VehicleSpeed:Toggle({
             Name = "Enabled",
-            Default = AutoInteract.Settings.Enabled.Default,
+            Default = VehicleSpeed.Settings.Enabled.Default,
             Callback = function(value)
-                AutoInteract.Settings.Enabled.Value = value
-                if value then
-                    AutoInteract.Start()
-                    notify("AutoInteract", "Enabled", true)
-                else
-                    notify("AutoInteract", "Disabled", true)
+                VehicleSpeed.Settings.Enabled.Value = value
+                if value then VehicleSpeed.Start() else VehicleSpeed.Stop() end
+            end
+        })
+        UI.Sections.VehicleSpeed:Slider({
+            Name = "Speed Boost Multiplier",
+            Minimum = 1,
+            Maximum = 5,
+            Default = VehicleSpeed.Settings.SpeedBoostMultiplier.Default,
+            Precision = 2,
+            Callback = VehicleSpeed.SetSpeedBoostMultiplier
+        })
+        UI.Sections.VehicleSpeed:Toggle({
+            Name = "Hold Speed",
+            Default = VehicleSpeed.Settings.HoldSpeed.Default,
+            Callback = function(value)
+                VehicleSpeed.Settings.HoldSpeed.Value = value
+                notify("VehicleSpeed", "Hold Speed " .. (value and "Enabled" or "Disabled"), true)
+            end
+        })
+        UI.Sections.VehicleSpeed:Keybind({
+            Name = "Hold Keybind",
+            Default = VehicleSpeed.Settings.HoldKeybind.Default,
+            Callback = function(value)
+                if value ~= VehicleSpeed.Settings.HoldKeybind.Value then
+                    VehicleSpeed.Settings.HoldKeybind.Value = value
+                    notify("VehicleSpeed", "Hold Keybind set to: " .. tostring(value), true)
                 end
             end
         })
-        UI.Sections.AutoInteract:Dropdown({
-            Name = "Target Object",
-            Options = {"Bin", "Dumpster", "AirDrop"},
-            Default = AutoInteract.Settings.TargetObject.Default,
+        UI.Sections.VehicleSpeed:Keybind({
+            Name = "Toggle Key",
+            Default = VehicleSpeed.Settings.ToggleKey.Default,
             Callback = function(value)
-                AutoInteract.Settings.TargetObject.Value = value
-                notify("AutoInteract", "Target Object set to: " .. value, true)
+                VehicleSpeed.Settings.ToggleKey.Value = value
+                if VehicleSpeed.Settings.Enabled.Value then
+                    if VehicleSpeed.State.Connection then
+                        VehicleSpeed.Stop()
+                    else
+                        VehicleSpeed.Start()
+                    end
+                else
+                    notify("VehicleSpeed", "Enable Vehicle Speed to use keybind.", true)
+                end
             end
         })
-        UI.Sections.AutoInteract:Slider({
-            Name = "Max Distance",
-            Minimum = 5,
-            Maximum = 50,
-            Default = AutoInteract.Settings.MaxDistance.Default,
+    end
+
+    -- Настройка UI для VehicleFly
+    if UI.Sections.VehicleFly then
+        UI.Sections.VehicleFly:Header({ Name = "Vehicle Fly Settings" })
+        UI.Sections.VehicleFly:Toggle({
+            Name = "Enabled",
+            Default = VehicleFly.Settings.Enabled.Default,
+            Callback = function(value)
+                VehicleFly.Settings.Enabled.Value = value
+                if value then VehicleFly.Start() else VehicleFly.Stop() end
+            end
+        })
+        UI.Sections.VehicleFly:Slider({
+            Name = "Fly Speed",
+            Minimum = 10,
+            Maximum = 200,
+            Default = VehicleFly.Settings.FlySpeed.Default,
             Precision = 1,
-            Callback = function(value)
-                AutoInteract.Settings.MaxDistance.Value = value
-                notify("AutoInteract", "Max Distance set to: " .. value, false)
-            end
+            Callback = VehicleFly.SetFlySpeed
         })
-        UI.Sections.AutoInteract:Slider({
-            Name = "Minus Hold Time",
-            Minimum = 0,
-            Maximum = 100,
-            Default = AutoInteract.Settings.MinusHoldTime.Default,
-            Precision = 0,
-            Suffix = "%",
+        UI.Sections.VehicleFly:Keybind({
+            Name = "Toggle Key",
+            Default = VehicleFly.Settings.ToggleKey.Default,
             Callback = function(value)
-                AutoInteract.Settings.MinusHoldTime.Value = value
-                notify("AutoInteract", "Minus Hold Time set to: " .. value .. "%", false)
-            end
-        })
-        UI.Sections.AutoInteract:Slider({
-            Name = "Min Distance Between Objects",
-            Minimum = 1,
-            Maximum = 20,
-            Default = AutoInteract.Settings.MinDistanceBetweenObjects.Default,
-            Precision = 1,
-            Callback = function(value)
-                AutoInteract.Settings.MinDistanceBetweenObjects.Value = value
-                notify("AutoInteract", "Min Distance Between Objects set to: " .. value, false)
-            end
-        })
-        UI.Sections.AutoInteract:Slider({
-            Name = "Activation Delay",
-            Minimum = 0.1,
-            Maximum = 5,
-            Default = AutoInteract.Settings.ActivationDelay.Default,
-            Precision = 1,
-            Callback = function(value)
-                AutoInteract.Settings.ActivationDelay.Value = value
-                notify("AutoInteract", "Activation Delay set to: " .. value, false)
-            end
-        })
-        UI.Sections.AutoInteract:Toggle({
-            Name = "Enable Debug Logs",
-            Default = AutoInteract.Settings.EnableDebugLogs.Default,
-            Callback = function(value)
-                AutoInteract.Settings.EnableDebugLogs.Value = value
-                notify("AutoInteract", "Debug Logs " .. (value and "Enabled" or "Disabled"), false)
-            end
+                VehicleFly.Settings.ToggleKey.Value = value
+                if VehicleFly.Settings.Enabled.Value then
+                    if VehicleFly.State.Connection then
+                        VehicleFly.Stop()
+                    else
+                        VehicleFly.Start()
+                    end
+                else
+                    notify("VehicleFly", "Enable Vehicle Fly to use keybind.", true)
+                end
         })
     end
 end
 
-return Auto
+return Vehicles
