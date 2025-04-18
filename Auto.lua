@@ -488,7 +488,7 @@ function Auto.Init(UI, Core, notify)
             Callback = function(value)
                 AutoInteract.Settings.EnableDebugLogs.Value = value
                 notify("AutoInteract", "Debug Logs " .. (value and "Enabled" or "Disabled"), false)
-            }
+            end
         })
     end
 end
