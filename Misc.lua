@@ -10,34 +10,30 @@ function Misc.Init(UI, Core, notify)
         return
     end
 
+    -- Кэш и таймеры для оптимизации
+    local Cache = {
+        PlayerList = {},
+        LastUpdate = 0,
+        UpdateInterval = 1, -- Обновление списка игроков раз в 1 секунду
+        LastFriendUpdate = 0,
+        FriendUpdateThreshold = 0.5 -- Debounce для updateFriendsList
+    }
+
     local function getPlayerList()
+        if tick() - Cache.LastUpdate < Cache.UpdateInterval then
+            return Cache.PlayerList
+        end
+
         local players = {}
-        -- Попытка через GetPlayers
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player ~= Core.PlayerData.LocalPlayer then
                 table.insert(players, player.Name)
             end
         end
-        print("getPlayerList (GetPlayers): ", table.concat(players, ", "), " (", #players, " players)")
 
-        -- Если GetPlayers не сработал, ищем через Workspace (для Deadline)
-        if #players == 0 then
-            for _, descendant in ipairs(Core.Services.Workspace:GetDescendants()) do
-                if descendant:IsA("Model") and descendant:FindFirstChildOfClass("Humanoid") then
-                    local player = Core.Services.Players:GetPlayerFromCharacter(descendant)
-                    if player and player ~= Core.PlayerData.LocalPlayer then
-                        table.insert(players, player.Name)
-                    elseif descendant.Name ~= Core.PlayerData.LocalPlayer.Name then
-                        -- Проверяем, есть ли атрибут или тег, указывающий на игрока
-                        if descendant:GetAttribute("IsPlayer") or game:GetService("CollectionService"):HasTag(descendant, "Player") then
-                            table.insert(players, descendant.Name)
-                        end
-                    end
-                end
-            end
-            print("getPlayerList (Workspace): ", table.concat(players, ", "), " (", #players, " players)")
-        end
-
+        Cache.PlayerList = players
+        Cache.LastUpdate = tick()
+        print("getPlayerList: ", table.concat(players, ", "), " (", #players, " players)")
         return players
     end
 
@@ -45,6 +41,11 @@ function Misc.Init(UI, Core, notify)
     local friendDropdown
 
     local function updateFriendsList(selected)
+        if tick() - Cache.LastFriendUpdate < Cache.FriendUpdateThreshold then
+            return
+        end
+        Cache.LastFriendUpdate = tick()
+
         local selectedPlayers = {}
         if type(selected) == "table" then
             for key, value in pairs(selected) do
@@ -58,6 +59,11 @@ function Misc.Init(UI, Core, notify)
             end
         elseif type(selected) == "string" then
             selectedPlayers = {selected}
+        end
+
+        -- Проверяем, изменился ли выбор
+        if #selectedPlayers == #Core.Services.FriendsList and table.concat(selectedPlayers, ",") == table.concat(Core.Services.FriendsList, ",") then
+            return
         end
 
         Core.Services.FriendsList = selectedPlayers
@@ -82,11 +88,26 @@ function Misc.Init(UI, Core, notify)
                 table.insert(newSelection, playerName)
             end
         end
+
+        -- Проверяем, изменился ли список опций
+        local currentOptions = friendDropdown:GetOptions() or {}
+        local optionsChanged = #newOptions ~= #currentOptions
+        if not optionsChanged then
+            for i, opt in ipairs(newOptions) do
+                if opt ~= currentOptions[i] then
+                    optionsChanged = true
+                    break
+                end
+            end
+        end
+
+        if optionsChanged then
+            friendDropdown:ClearOptions()
+            friendDropdown:InsertOptions(newOptions)
+        end
+
         Core.Services.FriendsList = newSelection
         currentSelection = newSelection
-
-        friendDropdown:ClearOptions()
-        friendDropdown:InsertOptions(newOptions)
         friendDropdown:UpdateSelection(newSelection)
         print("updateFriendDropdownOptions: Inserted ", #newOptions, "options, Selected ", #newSelection, "friends")
     end
@@ -104,6 +125,7 @@ function Misc.Init(UI, Core, notify)
     UI.Sections.FriendList:Button({
         Name = "Refresh Player List",
         Callback = function()
+            Cache.LastUpdate = 0 -- Сброс кэша для немедленного обновления
             updateFriendDropdownOptions()
             notify("Friend List", "Player list refreshed")
         end
@@ -128,7 +150,10 @@ function Misc.Init(UI, Core, notify)
     })
 
     Core.Services.Players.PlayerAdded:Connect(function()
-        updateFriendDropdownOptions()
+        task.defer(function()
+            Cache.LastUpdate = 0
+            updateFriendDropdownOptions()
+        end)
     end)
 
     Core.Services.Players.PlayerRemoving:Connect(function(player)
@@ -137,7 +162,10 @@ function Misc.Init(UI, Core, notify)
             table.remove(currentSelection, table.find(currentSelection, player.Name))
             notify("Friend List", player.Name .. " has left and was removed from friends")
         end
-        updateFriendDropdownOptions()
+        task.defer(function()
+            Cache.LastUpdate = 0
+            updateFriendDropdownOptions()
+        end)
     end)
 end
 
