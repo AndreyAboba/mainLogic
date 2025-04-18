@@ -14,9 +14,9 @@ function Misc.Init(UI, Core, notify)
     local Cache = {
         PlayerList = {},
         LastUpdate = 0,
-        UpdateInterval = 1, -- Обновление списка игроков раз в 1 секунду
+        UpdateInterval = 1,
         LastFriendUpdate = 0,
-        FriendUpdateThreshold = 0.5 -- Debounce для updateFriendsList
+        FriendUpdateThreshold = 0.5
     }
 
     local function getPlayerList()
@@ -33,7 +33,6 @@ function Misc.Init(UI, Core, notify)
 
         Cache.PlayerList = players
         Cache.LastUpdate = tick()
-        print("getPlayerList: ", table.concat(players, ", "), " (", #players, " players)")
         return players
     end
 
@@ -61,7 +60,6 @@ function Misc.Init(UI, Core, notify)
             selectedPlayers = {selected}
         end
 
-        -- Проверяем, изменился ли выбор
         if #selectedPlayers == #Core.Services.FriendsList and table.concat(selectedPlayers, ",") == table.concat(Core.Services.FriendsList, ",") then
             return
         end
@@ -69,7 +67,6 @@ function Misc.Init(UI, Core, notify)
         Core.Services.FriendsList = selectedPlayers
         currentSelection = selectedPlayers
 
-        print("updateFriendsList: ", #Core.Services.FriendsList, "friends selected (", table.concat(Core.Services.FriendsList, ", "), ")")
         notify("Friend List", "Updated friends: " .. (#Core.Services.FriendsList > 0 and table.concat(Core.Services.FriendsList, ", ") or "None"), true)
     end
 
@@ -89,7 +86,6 @@ function Misc.Init(UI, Core, notify)
             end
         end
 
-        -- Проверяем, изменился ли список опций
         local currentOptions = friendDropdown:GetOptions() or {}
         local optionsChanged = #newOptions ~= #currentOptions
         if not optionsChanged then
@@ -109,7 +105,6 @@ function Misc.Init(UI, Core, notify)
         Core.Services.FriendsList = newSelection
         currentSelection = newSelection
         friendDropdown:UpdateSelection(newSelection)
-        print("updateFriendDropdownOptions: Inserted ", #newOptions, "options, Selected ", #newSelection, "friends")
     end
 
     UI.Sections.FriendList:Header({ Name = "Friend List" })
@@ -125,7 +120,7 @@ function Misc.Init(UI, Core, notify)
     UI.Sections.FriendList:Button({
         Name = "Refresh Player List",
         Callback = function()
-            Cache.LastUpdate = 0 -- Сброс кэша для немедленного обновления
+            Cache.LastUpdate = 0
             updateFriendDropdownOptions()
             notify("Friend List", "Player list refreshed")
         end
