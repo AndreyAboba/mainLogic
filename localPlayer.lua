@@ -20,7 +20,7 @@ local SpeedStatus = {
     LastJumpTime = 0,
     JumpCooldown = 0.5,
     JumpPower = 50,
-    JumpInterval = 0.3, -- Уменьшено для более частых прыжков
+    JumpInterval = 0.3,
     PulseTPDistance = 5,
     PulseTPFrequency = 0.2,
     LastPulseTPTime = 0
@@ -40,7 +40,7 @@ local NoRagdollStatus = {
 local FastAttackStatus = {
     Enabled = false,
     Connection = nil,
-    AttackSpeed = 0.1 -- Минимальная скорость атаки вместо 0
+    AttackSpeed = 0
 }
 
 -- Вспомогательные функции
@@ -71,17 +71,13 @@ FastAttack.Start = function()
         for _, item in pairs(backpack:GetChildren()) do
             if item.Name == "fists" or item:GetAttribute("Speed") then
                 pcall(function()
-                    -- Сохраняем исходную скорость, если ещё не сохранена
-                    if not item:GetAttribute("DefaultSpeed") then
-                        item:SetAttribute("DefaultSpeed", item:GetAttribute("Speed") or 1)
-                    end
                     item:SetAttribute("Speed", FastAttackStatus.AttackSpeed)
                 end)
             end
         end
     end)
 
-    notify("FastAttack", "Started with Speed set to " .. FastAttackStatus.AttackSpeed, true)
+    notify("FastAttack", "Started with Speed set to 0", true)
 end
 
 FastAttack.Stop = function()
@@ -94,17 +90,15 @@ FastAttack.Stop = function()
     local backpack = player and player:FindFirstChild("Backpack")
     if backpack then
         for _, item in pairs(backpack:GetChildren()) do
-            if item.Name == "fists" or item:GetAttribute("DefaultSpeed") then
+            if item.Name == "fists" or item:GetAttribute("Speed") then
                 pcall(function()
-                    local defaultSpeed = item:GetAttribute("DefaultSpeed") or 1
-                    item:SetAttribute("Speed", defaultSpeed)
-                    item:SetAttribute("DefaultSpeed", nil) -- Очищаем атрибут
+                    item:SetAttribute("Speed", 1)
                 end)
             end
         end
     end
 
-    notify("FastAttack", "Stopped, attack speed restored", true)
+    notify("FastAttack", "Stopped, attack speed restored to 1", true)
 end
 
 -- Timer Functions
@@ -236,19 +230,20 @@ Speed.Start = function()
         end
 
         if SpeedStatus.AutoJump and currentTime - SpeedStatus.LastJumpTime >= SpeedStatus.JumpInterval then
-            if humanoid:GetState() == Enum.HumanoidStateType.Running then
-                humanoid.JumpHeight = SpeedStatus.JumpPower
+            if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
+                rootPart.Velocity = Vector3.new(rootPart.Velocity.X, SpeedStatus.JumpPower, rootPart.Velocity.Z)
                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
                 SpeedStatus.LastJumpTime = currentTime
-                notify("Speed", "AutoJump triggered", false) -- Временное уведомление для отладки
+                notify("Speed", "AutoJump triggered", false)
             end
         end
 
         if SpeedStatus.FakeJump and currentTime - SpeedStatus.LastJumpTime >= SpeedStatus.JumpInterval then
-            if humanoid:GetState() == Enum.HumanoidStateType.Running then
-                rootPart.Velocity = Vector3.new(rootPart.Velocity.X, SpeedStatus.JumpPower, rootPart.Velocity.Z)
+            if humanoid.Health > 0 then
+                local newCFrame = rootPart.CFrame + Vector3.new(0, SpeedStatus.JumpPower / 20, 0)
+                rootPart.CFrame = newCFrame
                 SpeedStatus.LastJumpTime = currentTime
-                notify("Speed", "FakeJump triggered", false) -- Временное уведомление для отладки
+                notify("Speed", "FakeJump triggered", false)
             end
         end
     end)
@@ -266,7 +261,6 @@ Speed.Stop = function()
     local character = Core.PlayerData.LocalPlayer.Character
     if character and character:FindFirstChild("Humanoid") then
         character.Humanoid.WalkSpeed = 16
-        character.Humanoid.JumpHeight = 50 -- Восстанавливаем стандартную высоту прыжка
     end
 
     notify("Speed", "Stopped", true)
