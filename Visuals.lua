@@ -327,7 +327,7 @@ function Visuals.Init(UI, Core, notify)
 
             local timePadding = Instance.new("UIPadding")
             timePadding.PaddingLeft = UDim.new(0, 5)
-            padding.PaddingRight = UDim.new(0, 5)
+            timePadding.PaddingRight = UDim.new(0, 5)
             timePadding.Parent = timeFrame
         end
 
@@ -600,7 +600,9 @@ function Visuals.Init(UI, Core, notify)
         local time = currentTime
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
-            if player == Core.PlayerData.LocalPlayer then continue end
+            if player == Core.PlayerData.LocalPlayer then
+                continue
+            end
 
             local character = workspace:FindFirstChild(player.Name)
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
@@ -1145,7 +1147,7 @@ function Visuals.Init(UI, Core, notify)
                 Default = ESP.Settings.FilledEnabled.Default,
                 Callback = function(value)
                     ESP.Settings.FilledEnabled.Value = value
-                   Libraries                if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
                         notify("ESP", "Filled " .. (value and "Enabled" or "Disabled"), true)
                     end
@@ -1224,4 +1226,3 @@ function Visuals.Init(UI, Core, notify)
 end
 
 return Visuals
-
