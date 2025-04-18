@@ -296,11 +296,11 @@ function Visuals.Init(UI, Core, notify)
             local totalWidth, visibleChildren = 0, 0
             for _, child in ipairs(container:GetChildren()) do
                 if child:IsA("GuiObject") and child.Visible then
-                    totalWidth += child.Size.X.Offset
-                    visibleChildren += 1
+                    totalWidth = totalWidth + child.Size.X.Offset
+                    visibleChildren = visibleChildren + 1
                 end
             end
-            totalWidth += (layout.Padding.Offset * math.max(0, visibleChildren - 1))
+            totalWidth = totalWidth + (layout.Padding.Offset * math.max(0, visibleChildren - 1))
             container.Size = UDim2.new(0, totalWidth, 0, 30)
         end
 
@@ -317,10 +317,10 @@ function Visuals.Init(UI, Core, notify)
 
     local function updateGradientCircle(deltaTime)
         if not State.Watermark.Enabled or not Elements.Watermark.LogoSegments then return end
-        Cache.LastGradientUpdate += deltaTime
+        Cache.LastGradientUpdate = Cache.LastGradientUpdate + deltaTime
         if Cache.LastGradientUpdate < WatermarkConfig.gradientUpdateInterval then return end
 
-        State.Watermark.GradientTime += Cache.LastGradientUpdate
+        State.Watermark.GradientTime = State.Watermark.GradientTime + Cache.LastGradientUpdate
         Cache.LastGradientUpdate = 0
         local t = (math.sin(State.Watermark.GradientTime / WatermarkConfig.gradientSpeed * 2 * math.pi) + 1) / 2
         local color1, color2 = ESP.Settings.GradientColor1.Value, ESP.Settings.GradientColor2.Value
@@ -382,8 +382,8 @@ function Visuals.Init(UI, Core, notify)
         if not State.Watermark.Enabled then return end
         updateGradientCircle(deltaTime)
         if WatermarkConfig.showFPS and Elements.Watermark.FPSLabel then
-            State.Watermark.FrameCount += 1
-            State.Watermark.AccumulatedTime += deltaTime
+            State.Watermark.FrameCount = State.Watermark.FrameCount + 1
+            State.Watermark.AccumulatedTime = State.Watermark.AccumulatedTime + deltaTime
             if State.Watermark.AccumulatedTime >= WatermarkConfig.updateInterval then
                 Elements.Watermark.FPSLabel.Text = tostring(math.floor(State.Watermark.FrameCount / State.Watermark.AccumulatedTime)) .. " FPS"
                 State.Watermark.FrameCount = 0
@@ -411,7 +411,7 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    местного UPDATE_INTERVAL = 0.02
+    local UPDATE_INTERVAL = 0.02
     local lastUpdate, playerCache = 0, {}
 
     local function createESP(player)
@@ -579,10 +579,10 @@ function Visuals.Init(UI, Core, notify)
                     if ESP.Settings.ShowBox.Value then
                         local radius = ESP.Settings.CornerRadius.Value
                         if radius > 0 then
-                            topLeft += Vector2.new(radius, radius)
-                            topRight += Vector2.new(-radius, radius)
-                            bottomLeft += Vector2.new(radius, -radius)
-                            bottomRight += Vector2.new(-radius, -radius)
+                            topLeft = topLeft + Vector2.new(radius, radius)
+                            topRight = topRight + Vector2.new(-radius, radius)
+                            bottomLeft = bottomLeft + Vector2.new(radius, -radius)
+                            bottomRight = bottomRight + Vector2.new(-radius, -radius)
                         end
 
                         local color = baseColor
