@@ -1,4 +1,4 @@
--- Модуль LocalPlayer: Timer, Disabler, Speed, HighJump, NoRagdoll, AntiStamina, FastAttack
+-- Модуль LocalPlayer: Timer, Disabler, Speed, HighJump, NoRagdoll, FastAttack
 local LocalPlayer = {}
 
 -- Локальные переменные для хранения Core и notify
@@ -36,14 +36,6 @@ local HighJumpStatus = {
 local NoRagdollStatus = {
     Enabled = false,
     Connection = nil
-}
-local AntiStaminaStatus = {
-    Enabled = false,
-    Connection = nil,
-    CharacterConnection = nil,
-    SoundMonitorConnection = nil,
-    LastStaminaUpdate = 0,
-    UPDATE_INTERVAL = 0.2
 }
 local FastAttackStatus = {
     Enabled = false,
@@ -220,9 +212,6 @@ Speed.Start = function()
                 if not raycastResult then
                     rootPart.CFrame = CFrame.new(destination, destination + moveDirection)
                     SpeedStatus.LastPulseTPTime = currentTime
-                    notify("Speed", "PulseTP: Teleported " .. SpeedStatus.PulseTPDistance .. " studs", false)
-                else
-                    notify("Speed", "PulseTP: Obstacle detected, teleport canceled", false)
                 end
             end
         end
@@ -408,109 +397,9 @@ end
 NoRagdoll.Stop = function()
     if NoRagdollStatus.Connection then
         NoRagdollStatus.Connection:Disconnect()
-        FastAttackStatus.Connection = nil
+        NoRagdollStatus.Connection = nil
     end
     notify("NoRagdoll", "Stopped", true)
-end
-
--- AntiStamina Functions
-local AntiStamina = {}
-AntiStamina.Start = function()
-    if AntiStaminaStatus.Connection then
-        AntiStaminaStatus.Connection:Disconnect()
-        AntiStaminaStatus.Connection = nil
-    end
-    if AntiStaminaStatus.CharacterConnection then
-        AntiStaminaStatus.CharacterConnection:Disconnect()
-        AntiStaminaStatus.CharacterConnection = nil
-    end
-    if AntiStaminaStatus.SoundMonitorConnection then
-        AntiStaminaStatus.SoundMonitorConnection:Disconnect()
-        AntiStaminaStatus.SoundMonitorConnection = nil
-    end
-
-    local character = Core.PlayerData.LocalPlayer.Character or Core.PlayerData.LocalPlayer.CharacterAdded:Wait()
-    local u13 = require(Core.Services.ReplicatedStorage.Modules.Game.Sprint)
-
-    u13.consume_stamina = function(...)
-        return true
-    end
-    u13.sprint_bar.update = function(...)
-        return 1
-    end
-
-    local function lockStamina()
-        u13.sprint_bar.set(1)
-        local staminaBar = Core.PlayerData.LocalPlayer.PlayerGui:WaitForChild("TopRightHud", 5) and Core.PlayerData.LocalPlayer.PlayerGui.TopRightHud.Holder.StaminaBar
-        if staminaBar and staminaBar:FindFirstChild("Fill") then
-            staminaBar.Fill.Size = UDim2.fromScale(1, 1)
-            local staminaAmount = staminaBar:FindFirstChild("StaminaBarAmount")
-            if staminaAmount then
-                staminaAmount.Text = "100 / 100"
-            end
-        end
-    end
-
-    local function removeBreathingSound(char)
-        if not char then return end
-        local rootPart = char:FindFirstChild("HumanoidRootPart")
-        if rootPart and rootPart:FindFirstChild("Breathing") then
-            pcall(function()
-                rootPart.Breathing:Destroy()
-            end)
-        end
-    end
-
-    local function setupSoundMonitor(char)
-        local rootPart = char:WaitForChild("HumanoidRootPart", 5)
-        if not rootPart then return end
-        AntiStaminaStatus.SoundMonitorConnection = rootPart.ChildAdded:Connect(function(child)
-            if child.Name == "Breathing" then
-                pcall(function()
-                    child:Destroy()
-                end)
-            end
-        end)
-    end
-
-    lockStamina()
-    removeBreathingSound(character)
-    setupSoundMonitor(character)
-
-    AntiStaminaStatus.CharacterConnection = Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(newChar)
-        character = newChar
-        task.wait(1)
-        removeBreathingSound(newChar)
-        setupSoundMonitor(newChar)
-        lockStamina()
-    end)
-
-    AntiStaminaStatus.Connection = Core.Services.RunService.Heartbeat:Connect(function()
-        local currentTime = tick()
-        if currentTime - AntiStaminaStatus.LastStaminaUpdate >= AntiStaminaStatus.UPDATE_INTERVAL then
-            lockStamina()
-            AntiStaminaStatus.LastStaminaUpdate = currentTime
-        end
-    end)
-
-    notify("AntiStamina", "Started with optimized stamina lock and sound removal", true)
-end
-
-AntiStamina.Stop = function()
-    if AntiStaminaStatus.Connection then
-        AntiStaminaStatus.Connection:Disconnect()
-        AntiStaminaStatus.Connection = nil
-    end
-    if AntiStaminaStatus.CharacterConnection then
-        AntiStaminaStatus.CharacterConnection:Disconnect()
-        AntiStaminaStatus.CharacterConnection = nil
-    end
-    if AntiStaminaStatus.SoundMonitorConnection then
-        AntiStaminaStatus.SoundMonitorConnection:Disconnect()
-        AntiStaminaStatus.SoundMonitorConnection = nil
-    end
-
-    notify("AntiStamina", "Stopped", true)
 end
 
 -- Инициализация модуля
@@ -715,18 +604,6 @@ function LocalPlayer.Init(UI, core, notifyFunc)
             Callback = function(value)
                 NoRagdollStatus.Enabled = value
                 if value then NoRagdoll.Start(Core.PlayerData.LocalPlayer.Character) else NoRagdoll.Stop() end
-            end
-        })
-    end
-
-    if UI.Sections.AntiStamina then
-        UI.Sections.AntiStamina:Header({ Name = "AntiStamina" })
-        UI.Sections.AntiStamina:Toggle({
-            Name = "Enabled",
-            Default = false,
-            Callback = function(value)
-                AntiStaminaStatus.Enabled = value
-                if value then AntiStamina.Start() else AntiStamina.Stop() end
             end
         })
     end
