@@ -20,7 +20,7 @@ local SpeedStatus = {
     LastJumpTime = 0,
     JumpCooldown = 0.5,
     JumpPower = 50,
-    JumpInterval = 0.5,
+    JumpInterval = 0.3, -- Уменьшено для более частых прыжков
     PulseTPDistance = 5,
     PulseTPFrequency = 0.2,
     LastPulseTPTime = 0
@@ -40,7 +40,7 @@ local NoRagdollStatus = {
 local FastAttackStatus = {
     Enabled = false,
     Connection = nil,
-    AttackSpeed = 1
+    AttackSpeed = 0.1 -- Минимальная скорость атаки вместо 0
 }
 
 -- Вспомогательные функции
@@ -71,13 +71,17 @@ FastAttack.Start = function()
         for _, item in pairs(backpack:GetChildren()) do
             if item.Name == "fists" or item:GetAttribute("Speed") then
                 pcall(function()
-                    item:SetAttribute("Speed", 0)
+                    -- Сохраняем исходную скорость, если ещё не сохранена
+                    if not item:GetAttribute("DefaultSpeed") then
+                        item:SetAttribute("DefaultSpeed", item:GetAttribute("Speed") or 1)
+                    end
+                    item:SetAttribute("Speed", FastAttackStatus.AttackSpeed)
                 end)
             end
         end
     end)
 
-    notify("FastAttack", "Started with Speed set to 0", true)
+    notify("FastAttack", "Started with Speed set to " .. FastAttackStatus.AttackSpeed, true)
 end
 
 FastAttack.Stop = function()
@@ -85,7 +89,22 @@ FastAttack.Stop = function()
         FastAttackStatus.Connection:Disconnect()
         FastAttackStatus.Connection = nil
     end
-    notify("FastAttack", "Stopped", true)
+
+    local player = Core.PlayerData.LocalPlayer
+    local backpack = player and player:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in pairs(backpack:GetChildren()) do
+            if item.Name == "fists" or item:GetAttribute("DefaultSpeed") then
+                pcall(function()
+                    local defaultSpeed = item:GetAttribute("DefaultSpeed") or 1
+                    item:SetAttribute("Speed", defaultSpeed)
+                    item:SetAttribute("DefaultSpeed", nil) -- Очищаем атрибут
+                end)
+            end
+        end
+    end
+
+    notify("FastAttack", "Stopped, attack speed restored", true)
 end
 
 -- Timer Functions
@@ -217,18 +236,19 @@ Speed.Start = function()
         end
 
         if SpeedStatus.AutoJump and currentTime - SpeedStatus.LastJumpTime >= SpeedStatus.JumpInterval then
-            if humanoid.FloorMaterial ~= Enum.Material.Air then
-                humanoid.Jump = true
+            if humanoid:GetState() == Enum.HumanoidStateType.Running then
                 humanoid.JumpHeight = SpeedStatus.JumpPower
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
                 SpeedStatus.LastJumpTime = currentTime
+                notify("Speed", "AutoJump triggered", false) -- Временное уведомление для отладки
             end
         end
 
         if SpeedStatus.FakeJump and currentTime - SpeedStatus.LastJumpTime >= SpeedStatus.JumpInterval then
-            if humanoid.FloorMaterial ~= Enum.Material.Air then
-                local newCFrame = rootPart.CFrame + Vector3.new(0, SpeedStatus.JumpPower / 10, 0)
-                rootPart.CFrame = newCFrame
+            if humanoid:GetState() == Enum.HumanoidStateType.Running then
+                rootPart.Velocity = Vector3.new(rootPart.Velocity.X, SpeedStatus.JumpPower, rootPart.Velocity.Z)
                 SpeedStatus.LastJumpTime = currentTime
+                notify("Speed", "FakeJump triggered", false) -- Временное уведомление для отладки
             end
         end
     end)
@@ -246,6 +266,7 @@ Speed.Stop = function()
     local character = Core.PlayerData.LocalPlayer.Character
     if character and character:FindFirstChild("Humanoid") then
         character.Humanoid.WalkSpeed = 16
+        character.Humanoid.JumpHeight = 50 -- Восстанавливаем стандартную высоту прыжка
     end
 
     notify("Speed", "Stopped", true)
@@ -297,7 +318,7 @@ HighJump.Trigger = function()
     local rootPart = getRootPart()
     if not humanoid or not rootPart then return end
 
-    local isOnGround = humanoid.FloorMaterial ~= Enum.Material.Air and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping
+    local isOnGround = humanoid:GetState() == Enum.HumanoidStateType.Running
     local canJump = tick() - HighJumpStatus.LastJumpTime >= HighJumpStatus.JumpCooldown
 
     if not isOnGround then
@@ -310,8 +331,8 @@ HighJump.Trigger = function()
         return
     end
 
-    humanoid.JumpPower = HighJumpStatus.JumpPower
-    humanoid.Jump = true
+    humanoid.JumpHeight = HighJumpStatus.JumpPower
+    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 
     if HighJumpStatus.Method == "Velocity" then
         local gravity = game.Workspace.Gravity or 196.2
@@ -495,11 +516,11 @@ function LocalPlayer.Init(UI, core, notifyFunc)
             end
         })
         UI.Sections.Speed:Toggle({
-            Name = "Fake Jump",
+            Name = "FakeJump",
             Default = false,
             Callback = function(value)
                 SpeedStatus.FakeJump = value
-                notify("Speed", "Fake Jump " .. (value and "Enabled" or "Disabled"), true)
+                notify("Speed", "FakeJump " .. (value and "Enabled" or "Disabled"), true)
             end
         })
         UI.Sections.Speed:Dropdown({
@@ -528,7 +549,7 @@ function LocalPlayer.Init(UI, core, notifyFunc)
             Name = "Jump Interval",
             Minimum = 0.1,
             Maximum = 2,
-            Default = 0.5,
+            Default = 0.3,
             Precision = 1,
             Callback = Speed.SetJumpInterval
         })
