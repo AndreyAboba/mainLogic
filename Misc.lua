@@ -43,7 +43,6 @@ function Misc.Init(UI, Core, notify)
                     if player and player ~= Core.PlayerData.LocalPlayer then
                         players[player.Name] = true
                     elseif descendant.Name ~= Core.PlayerData.LocalPlayer.Name then
-                        -- Если игрок не привязан, используем имя модели
                         players[descendant.Name] = true
                     end
                 end
@@ -51,8 +50,16 @@ function Misc.Init(UI, Core, notify)
         end
 
         Cache.PlayerList = players
-        Cache.LastTheme = tick()
-        print("getPlayerList: ", table.concat(table.keys(players), ", "), " (", #players, " players)")
+        Cache.LastUpdate = tick()
+
+        -- Собираем имена для лога
+        local playerNames = {}
+        local playerCount = 0
+        for name in pairs(players) do
+            table.insert(playerNames, name)
+            playerCount = playerCount + 1
+        end
+        print("getPlayerList: ", table.concat(playerNames, ", "), " (", playerCount, " players)")
         return players
     end
 
