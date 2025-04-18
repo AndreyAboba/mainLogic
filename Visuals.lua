@@ -38,7 +38,7 @@ function Visuals.Init(UI, Core, notify)
 
     -- Кэш
     local Cache = {
-        TextBounds = { FPSMax = 50 }, -- Ширина "999 FPS"
+        TextBounds = {},
         LastGradientUpdate = 0
     }
 
@@ -78,6 +78,37 @@ function Visuals.Init(UI, Core, notify)
             vim:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
         end)
     end
+
+    buttonFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            State.MenuButton.TouchStartTime = tick()
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or Core.Services.UserInputService:GetMouseLocation()
+            if mousePos then
+                State.MenuButton.Dragging = true
+                State.MenuButton.DragStart = mousePos
+                State.MenuButton.StartPos = buttonFrame.Position
+            end
+        end
+    end)
+
+    Core.Services.UserInputService.InputChanged:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and State.MenuButton.Dragging then
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or Core.Services.UserInputService:GetMouseLocation()
+            if mousePos then
+                local delta = mousePos - State.MenuButton.DragStart
+                buttonFrame.Position = UDim2.new(0, State.MenuButton.StartPos.X.Offset + delta.X, 0, State.MenuButton.StartPos.Y.Offset + delta.Y)
+            end
+        end
+    end)
+
+    buttonFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            State.MenuButton.Dragging = false
+            if tick() - State.MenuButton.TouchStartTime < State.MenuButton.TouchThreshold then
+                emulateRightControl()
+            end
+        end
+    end)
 
     -- Watermark
     local function initWatermark()
@@ -265,7 +296,7 @@ function Visuals.Init(UI, Core, notify)
 
             local timePadding = Instance.new("UIPadding")
             timePadding.PaddingLeft = UDim.new(0, 5)
-            timePadding.PaddingRight = UDim.new(0, 5)
+            padding.PaddingRight = UDim.new(0, 5)
             timePadding.Parent = timeFrame
         end
 
@@ -343,9 +374,9 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    local function handleInput(input, isMenuButton)
-        local target = isMenuButton and State.MenuButton or State.Watermark
-        local element = isMenuButton and buttonFrame or Elements.Watermark.Container
+    local function handleWatermarkInput(input)
+        local target = State.Watermark
+        local element = Elements.Watermark.Container
 
         if input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.Begin then
             local mousePos = Core.Services.UserInputService:GetMouseLocation()
@@ -355,22 +386,14 @@ function Visuals.Init(UI, Core, notify)
                 target.DragStart = mousePos
                 target.StartPos = element.Position
             end
-            if isMenuButton then
-                target.TouchStartTime = tick()
-            end
         elseif input.UserInputType == Enum.UserInputType.MouseMovement and target.Dragging then
             local mousePos = Core.Services.UserInputService:GetMouseLocation()
             local delta = mousePos - target.DragStart
             element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
         elseif input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.End then
-            if isMenuButton and target.TouchStartTime > 0 and tick() - target.TouchStartTime < target.TouchThreshold then
-                emulateRightControl()
-            end
             target.Dragging = false
-            target.TouchStartTime = 0
         elseif input.UserInputType == Enum.UserInputType.Touch then
             if input.UserInputState == Enum.UserInputState.Begin then
-                target.TouchStartTime = tick()
                 local mousePos = input.Position
                 if element and mousePos.X >= element.Position.X.Offset and mousePos.X <= element.Position.X.Offset + element.Size.X.Offset and
                    mousePos.Y >= element.Position.Y.Offset and mousePos.Y <= element.Position.Y.Offset + element.Size.Y.Offset then
@@ -383,27 +406,14 @@ function Visuals.Init(UI, Core, notify)
                 local delta = mousePos - target.DragStart
                 element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
             elseif input.UserInputState == Enum.UserInputState.End then
-                if isMenuButton and target.TouchStartTime > 0 and tick() - target.TouchStartTime < target.TouchThreshold then
-                    emulateRightControl()
-                end
                 target.Dragging = false
-                target.TouchStartTime = 0
             end
         end
     end
 
-    Core.Services.UserInputService.InputBegan:Connect(function(input)
-        handleInput(input, true)
-        handleInput(input, false)
-    end)
-    Core.Services.UserInputService.InputChanged:Connect(function(input)
-        handleInput(input, true)
-        handleInput(input, false)
-    end)
-    Core.Services.UserInputService.InputEnded:Connect(function(input)
-        handleInput(input, true)
-        handleInput(input, false)
-    end)
+    Core.Services.UserInputService.InputBegan:Connect(handleWatermarkInput)
+    Core.Services.UserInputService.InputChanged:Connect(handleWatermarkInput)
+    Core.Services.UserInputService.InputEnded:Connect(handleWatermarkInput)
 
     task.defer(initWatermark)
 
