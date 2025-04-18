@@ -16,7 +16,7 @@ function Misc.Init(UI, Core, notify)
         LastUpdate = 0,
         UpdateInterval = 1,
         LastFriendUpdate = 0,
-        FriendUpdateThreshold = 0.5 -- Debounce для updateFriendsList
+        FriendUpdateThreshold = 0.5
     }
 
     local currentSelection = Core.Services.FriendsList
@@ -28,14 +28,30 @@ function Misc.Init(UI, Core, notify)
         end
 
         local players = {}
+        -- Попытка через GetPlayers
         for _, player in ipairs(Core.Services.Players:GetPlayers()) do
             if player ~= Core.PlayerData.LocalPlayer then
                 players[player.Name] = true
             end
         end
 
+        -- Если GetPlayers не сработал, ищем через Workspace (для Deadline)
+        if not next(players) then
+            for _, descendant in ipairs(Core.Services.Workspace:GetDescendants()) do
+                if descendant:IsA("Model") and descendant:FindFirstChildOfClass("Humanoid") then
+                    local player = Core.Services.Players:GetPlayerFromCharacter(descendant)
+                    if player and player ~= Core.PlayerData.LocalPlayer then
+                        players[player.Name] = true
+                    elseif descendant.Name ~= Core.PlayerData.LocalPlayer.Name then
+                        -- Если игрок не привязан, используем имя модели
+                        players[descendant.Name] = true
+                    end
+                end
+            end
+        end
+
         Cache.PlayerList = players
-        Cache.LastUpdate = tick()
+        Cache.LastTheme = tick()
         print("getPlayerList: ", table.concat(table.keys(players), ", "), " (", #players, " players)")
         return players
     end
@@ -57,11 +73,19 @@ function Misc.Init(UI, Core, notify)
             selectedPlayers[selected] = true
         end
 
-        -- Обновляем только если есть изменения
         local newFriendsList = {}
         for playerName in pairs(selectedPlayers) do
             table.insert(newFriendsList, playerName)
         end
+
+        -- Синхронизируем с текущим выбором в Dropdown
+        local currentDropdownSelection = friendDropdown:GetSelection() or {}
+        for _, playerName in ipairs(currentDropdownSelection) do
+            if not selectedPlayers[playerName] then
+                table.insert(newFriendsList, playerName)
+            end
+        end
+
         if #newFriendsList == #Core.Services.FriendsList and table.concat(newFriendsList, ",") == table.concat(Core.Services.FriendsList, ",") then
             return
         end
