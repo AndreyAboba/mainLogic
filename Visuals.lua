@@ -20,7 +20,7 @@ function Visuals.Init(UI, Core, notify)
             DragStart = nil,
             StartPos = nil,
             LastTimeUpdate = 0,
-            TimeUpdateInterval = 1 -- Обновление времени раз в секунду
+            TimeUpdateInterval = 1
         }
     }
 
@@ -32,13 +32,14 @@ function Visuals.Init(UI, Core, notify)
         showTime = true,
         gradientColor1 = Color3.fromRGB(0, 0, 255),
         gradientColor2 = Color3.fromRGB(147, 112, 219),
-        updateInterval = 0.5, -- Для FPS
-        gradientUpdateInterval = 0.1 -- Для градиента
+        updateInterval = 0.5,
+        gradientUpdateInterval = 0.1,
+        fpsExtraPadding = 20 -- Дополнительный отступ для FPS фона
     }
 
     -- Кэш
     local Cache = {
-        TextBounds = {},
+        TextBounds = { FPSMax = 60 }, -- Кэшируем максимальную ширину "999 FPS"
         LastGradientUpdate = 0
     }
 
@@ -70,13 +71,12 @@ function Visuals.Init(UI, Core, notify)
     buttonIcon.Image = "rbxassetid://18821914323"
     buttonIcon.Parent = buttonFrame
 
-    local function emulateRightControl()
-        pcall(function()
-            local vim = game:GetService("VirtualInputManager")
-            vim:SendKeyEvent(true, Enum.KeyCode.RightControl, false, game)
-            wait()
-            vim:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
-        end)
+    local function toggleMenu()
+        if UI.Window and UI.Window.SetVisible then
+            UI.Window:SetVisible(not UI.Window.Visible)
+        else
+            warn("MacLib does not support direct window visibility toggle")
+        end
     end
 
     -- Watermark
@@ -209,10 +209,9 @@ function Visuals.Init(UI, Core, notify)
             fpsLabel.TextSize = 14
             fpsLabel.Font = Enum.Font.Gotham
             fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
-            fpsLabel.Size = UDim2.new(0, fpsLabel.TextBounds.X, 0, 20)
+            fpsLabel.Size = UDim2.new(0, Cache.TextBounds.FPSMax, 0, 20)
             fpsLabel.Parent = fpsContainer
             elements.FPSLabel = fpsLabel
-            Cache.TextBounds.FPS = fpsLabel.TextBounds.X
 
             local fpsPadding = Instance.new("UIPadding")
             fpsPadding.PaddingLeft = UDim.new(0, 5)
@@ -275,10 +274,10 @@ function Visuals.Init(UI, Core, notify)
             elements.PlayerNameFrame.Size = UDim2.new(0, playerNameWidth + 10, 0, 20)
 
             if WatermarkConfig.showFPS and elements.FPSContainer then
-                local fpsWidth = Cache.TextBounds.FPS or elements.FPSLabel.TextBounds.X
+                local fpsWidth = Cache.TextBounds.FPSMax
                 elements.FPSLabel.Size = UDim2.new(0, fpsWidth, 0, 20)
                 elements.FPSContainer.Size = UDim2.new(0, elements.FPSIcon.Size.X.Offset + fpsWidth + 4, 0, 20)
-                elements.FPSFrame.Size = UDim2.new(0, elements.FPSContainer.Size.X.Offset + 10, 0, 20)
+                elements.FPSFrame.Size = UDim2.new(0, elements.FPSContainer.Size.X.Offset + 10 + WatermarkConfig.fpsExtraPadding, 0, 20)
             end
 
             if WatermarkConfig.showTime and elements.TimeContainer then
@@ -337,7 +336,6 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    -- Общий обработчик ввода
     local function handleInput(input, isMenuButton)
         local target = isMenuButton and State.MenuButton or State.Watermark
         local element = isMenuButton and buttonFrame or Elements.Watermark.Container
@@ -359,7 +357,7 @@ function Visuals.Init(UI, Core, notify)
             element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
         elseif input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.End then
             if isMenuButton and target.TouchStartTime > 0 and tick() - target.TouchStartTime < target.TouchThreshold then
-                emulateRightControl()
+                toggleMenu()
             end
             target.Dragging = false
             target.TouchStartTime = 0
@@ -379,7 +377,7 @@ function Visuals.Init(UI, Core, notify)
                 element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
             elseif input.UserInputState == Enum.UserInputState.End then
                 if isMenuButton and target.TouchStartTime > 0 and tick() - target.TouchStartTime < target.TouchThreshold then
-                    emulateRightControl()
+                    toggleMenu()
                 end
                 target.Dragging = false
                 target.TouchStartTime = 0
