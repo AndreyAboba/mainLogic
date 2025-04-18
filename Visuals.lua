@@ -155,12 +155,12 @@ function Visuals.Init(UI, Core, notify)
         layout.Padding = UDim.new(0, 5)
         layout.Parent = container
 
-        local logoBackground = createFrameWithPadding(container, UDim2.new(0, 24, 0, 24), Color3.fromRGB(20, 30, 50), 0.3)
+        local logoBackground = createFrameWithPadding(container, UDim2.new(0, 28, 0, 28), Color3.fromRGB(20, 30, 50), 0.3)
         elements.LogoBackground = logoBackground
 
         local logoFrame = Instance.new("Frame")
         logoFrame.Size = UDim2.new(0, 20, 0, 20)
-        logoFrame.Position = UDim2.new(0, 2, 0, 2)
+        logoFrame.Position = UDim2.new(0.5, -10, 0.5, -10)
         logoFrame.BackgroundTransparency = 1
         logoFrame.Parent = logoBackground
         elements.LogoFrame = logoFrame
@@ -284,7 +284,7 @@ function Visuals.Init(UI, Core, notify)
                 elements.FPSLabel.Size = UDim2.new(0, fpsWidth, 0, 20)
                 local fpsContainerWidth = elements.FPSIcon.Size.X.Offset + fpsWidth + elements.FPSContainer:FindFirstChild("UIListLayout").Padding.Offset
                 elements.FPSContainer.Size = UDim2.new(0, fpsContainerWidth, 0, 20)
-                elements.FPSFrame.Size = UDim2.new(0, fpsContainerWidth + 20, 0, 20) -- Увеличил фон для FPS
+                elements.FPSFrame.Size = UDim2.new(0, fpsContainerWidth + 30, 0, 20) -- Увеличил фон для FPS с запасом
             end
 
             if WatermarkConfig.showTime and elements.TimeContainer then
