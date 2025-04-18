@@ -282,15 +282,17 @@ function Visuals.Init(UI, Core, notify)
             if WatermarkConfig.showFPS and elements.FPSContainer then
                 local fpsWidth = Cache.TextBounds.FPS or elements.FPSLabel.TextBounds.X
                 elements.FPSLabel.Size = UDim2.new(0, fpsWidth, 0, 20)
-                elements.FPSContainer.Size = UDim2.new(0, elements.FPSIcon.Size.X.Offset + fpsWidth + 4, 0, 20)
-                elements.FPSFrame.Size = UDim2.new(0, elements.FPSContainer.Size.X.Offset + 10, 0, 20)
+                local fpsContainerWidth = elements.FPSIcon.Size.X.Offset + fpsWidth + elements.FPSContainer:FindFirstChild("UIListLayout").Padding.Offset
+                elements.FPSContainer.Size = UDim2.new(0, fpsContainerWidth, 0, 20)
+                elements.FPSFrame.Size = UDim2.new(0, fpsContainerWidth + 20, 0, 20) -- Увеличил фон для FPS
             end
 
             if WatermarkConfig.showTime and elements.TimeContainer then
                 local timeWidth = Cache.TextBounds.Time or elements.TimeLabel.TextBounds.X
                 elements.TimeLabel.Size = UDim2.new(0, timeWidth, 0, 20)
-                elements.TimeContainer.Size = UDim2.new(0, elements.TimeIcon.Size.X.Offset + timeWidth + 4, 0, 20)
-                elements.TimeFrame.Size = UDim2.new(0, elements.TimeContainer.Size.X.Offset + 10, 0, 20)
+                local timeContainerWidth = elements.TimeIcon.Size.X.Offset + timeWidth + elements.TimeContainer:FindFirstChild("UIListLayout").Padding.Offset
+                elements.TimeContainer.Size = UDim2.new(0, timeContainerWidth, 0, 20)
+                elements.TimeFrame.Size = UDim2.new(0, timeContainerWidth + 10, 0, 20)
             end
 
             local totalWidth, visibleChildren = 0, 0
