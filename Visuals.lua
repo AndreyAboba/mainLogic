@@ -1,7 +1,7 @@
 local Visuals = {}
 
 function Visuals.Init(UI, Core, notify)
-    -- Таблица для хранения общих состояний
+    -- Общие состояния
     local State = {
         MenuButton = {
             Enabled = false,
@@ -18,7 +18,9 @@ function Visuals.Init(UI, Core, notify)
             AccumulatedTime = 0,
             Dragging = false,
             DragStart = nil,
-            StartPos = nil
+            StartPos = nil,
+            LastTimeUpdate = 0,
+            TimeUpdateInterval = 1 -- Обновление времени раз в секунду
         }
     }
 
@@ -30,7 +32,14 @@ function Visuals.Init(UI, Core, notify)
         showTime = true,
         gradientColor1 = Color3.fromRGB(0, 0, 255),
         gradientColor2 = Color3.fromRGB(147, 112, 219),
-        updateInterval = 0.5
+        updateInterval = 0.5, -- Для FPS
+        gradientUpdateInterval = 0.1 -- Для градиента
+    }
+
+    -- Кэш
+    local Cache = {
+        TextBounds = {},
+        LastGradientUpdate = 0
     }
 
     -- Элементы UI
@@ -69,37 +78,6 @@ function Visuals.Init(UI, Core, notify)
             vim:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
         end)
     end
-
-    buttonFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            State.MenuButton.TouchStartTime = tick()
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or Core.Services.UserInputService:GetMouseLocation()
-            if mousePos then
-                State.MenuButton.Dragging = true
-                State.MenuButton.DragStart = mousePos
-                State.MenuButton.StartPos = buttonFrame.Position
-            end
-        end
-    end)
-
-    Core.Services.UserInputService.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and State.MenuButton.Dragging then
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or Core.Services.UserInputService:GetMouseLocation()
-            if mousePos then
-                local delta = mousePos - State.MenuButton.DragStart
-                buttonFrame.Position = UDim2.new(0, State.MenuButton.StartPos.X.Offset + delta.X, 0, State.MenuButton.StartPos.Y.Offset + delta.Y)
-            end
-        end
-    end)
-
-    buttonFrame.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            State.MenuButton.Dragging = false
-            if tick() - State.MenuButton.TouchStartTime < State.MenuButton.TouchThreshold then
-                emulateRightControl()
-            end
-        end
-    end)
 
     -- Watermark
     local function initWatermark()
@@ -150,22 +128,21 @@ function Visuals.Init(UI, Core, notify)
         elements.LogoFrame = logoFrame
 
         elements.LogoSegments = {}
-        for i = 1, math.max(1, WatermarkConfig.segmentCount) do
+        local segmentCount = math.max(1, WatermarkConfig.segmentCount)
+        for i = 1, segmentCount do
             local segment = Instance.new("ImageLabel")
             segment.Size = UDim2.new(1, 0, 1, 0)
             segment.BackgroundTransparency = 1
             segment.Image = "rbxassetid://7151778302"
             segment.ImageTransparency = 0.4
-            segment.Rotation = (i - 1) * (360 / WatermarkConfig.segmentCount)
+            segment.Rotation = (i - 1) * (360 / segmentCount)
             segment.Parent = logoFrame
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0.5, 0)
-            corner.Parent = segment
+            Instance.new("UICorner", segment).CornerRadius = UDim.new(0.5, 0)
             local gradient = Instance.new("UIGradient")
             gradient.Color = ColorSequence.new(WatermarkConfig.gradientColor1, WatermarkConfig.gradientColor2)
-            gradient.Rotation = (i - 1) * (360 / WatermarkConfig.segmentCount)
+            gradient.Rotation = (i - 1) * (360 / segmentCount)
             gradient.Parent = segment
-            elements.LogoSegments[i] = segment
+            elements.LogoSegments[i] = { Segment = segment, Gradient = gradient }
         end
 
         local playerNameFrame = Instance.new("Frame")
@@ -187,6 +164,7 @@ function Visuals.Init(UI, Core, notify)
         playerNameLabel.TextXAlignment = Enum.TextXAlignment.Center
         playerNameLabel.Parent = playerNameFrame
         elements.PlayerNameLabel = playerNameLabel
+        Cache.TextBounds.PlayerName = playerNameLabel.TextBounds.X
 
         local padding = Instance.new("UIPadding")
         padding.PaddingLeft = UDim.new(0, 5)
@@ -234,6 +212,7 @@ function Visuals.Init(UI, Core, notify)
             fpsLabel.Size = UDim2.new(0, fpsLabel.TextBounds.X, 0, 20)
             fpsLabel.Parent = fpsContainer
             elements.FPSLabel = fpsLabel
+            Cache.TextBounds.FPS = fpsLabel.TextBounds.X
 
             local fpsPadding = Instance.new("UIPadding")
             fpsPadding.PaddingLeft = UDim.new(0, 5)
@@ -282,6 +261,7 @@ function Visuals.Init(UI, Core, notify)
             timeLabel.TextXAlignment = Enum.TextXAlignment.Left
             timeLabel.Parent = timeContainer
             elements.TimeLabel = timeLabel
+            Cache.TextBounds.Time = timeLabel.TextBounds.X
 
             local timePadding = Instance.new("UIPadding")
             timePadding.PaddingLeft = UDim.new(0, 5)
@@ -290,23 +270,27 @@ function Visuals.Init(UI, Core, notify)
         end
 
         local function updateSizes()
-            playerNameLabel.Size = UDim2.new(0, playerNameLabel.TextBounds.X, 1, 0)
-            playerNameFrame.Size = UDim2.new(0, playerNameLabel.TextBounds.X + 10, 0, 20)
+            local playerNameWidth = Cache.TextBounds.PlayerName or elements.PlayerNameLabel.TextBounds.X
+            elements.PlayerNameLabel.Size = UDim2.new(0, playerNameWidth, 1, 0)
+            elements.PlayerNameFrame.Size = UDim2.new(0, playerNameWidth + 10, 0, 20)
 
             if WatermarkConfig.showFPS and elements.FPSContainer then
-                elements.FPSContainer.Size = UDim2.new(0, elements.FPSIcon.Size.X.Offset + elements.FPSLabel.Size.X.Offset + 4, 0, 20)
+                local fpsWidth = Cache.TextBounds.FPS or elements.FPSLabel.TextBounds.X
+                elements.FPSLabel.Size = UDim2.new(0, fpsWidth, 0, 20)
+                elements.FPSContainer.Size = UDim2.new(0, elements.FPSIcon.Size.X.Offset + fpsWidth + 4, 0, 20)
                 elements.FPSFrame.Size = UDim2.new(0, elements.FPSContainer.Size.X.Offset + 10, 0, 20)
             end
 
             if WatermarkConfig.showTime and elements.TimeContainer then
-                elements.TimeLabel.Size = UDim2.new(0, elements.TimeLabel.TextBounds.X, 0, 20)
-                elements.TimeContainer.Size = UDim2.new(0, elements.TimeIcon.Size.X.Offset + elements.TimeLabel.TextBounds.X + 4, 0, 20)
+                local timeWidth = Cache.TextBounds.Time or elements.TimeLabel.TextBounds.X
+                elements.TimeLabel.Size = UDim2.new(0, timeWidth, 0, 20)
+                elements.TimeContainer.Size = UDim2.new(0, elements.TimeIcon.Size.X.Offset + timeWidth + 4, 0, 20)
                 elements.TimeFrame.Size = UDim2.new(0, elements.TimeContainer.Size.X.Offset + 10, 0, 20)
             end
 
             local totalWidth = 0
             local visibleChildren = 0
-            for _, child in pairs(container:GetChildren()) do
+            for _, child in ipairs(container:GetChildren()) do
                 if child:IsA("GuiObject") and child.Visible then
                     totalWidth = totalWidth + child.Size.X.Offset
                     visibleChildren = visibleChildren + 1
@@ -317,21 +301,32 @@ function Visuals.Init(UI, Core, notify)
         end
 
         updateSizes()
-        playerNameLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSizes)
+        if elements.PlayerNameLabel then
+            elements.PlayerNameLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+                Cache.TextBounds.PlayerName = elements.PlayerNameLabel.TextBounds.X
+                updateSizes()
+            end)
+        end
         if elements.TimeLabel then
-            elements.TimeLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateSizes)
+            elements.TimeLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
+                Cache.TextBounds.Time = elements.TimeLabel.TextBounds.X
+                updateSizes()
+            end)
         end
     end
 
     local function updateGradientCircle(deltaTime)
         if not State.Watermark.Enabled or not Elements.Watermark.LogoSegments then return end
-        State.Watermark.GradientTime = State.Watermark.GradientTime + deltaTime
+        Cache.LastGradientUpdate = Cache.LastGradientUpdate + deltaTime
+        if Cache.LastGradientUpdate < WatermarkConfig.gradientUpdateInterval then return end
+
+        State.Watermark.GradientTime = State.Watermark.GradientTime + Cache.LastGradientUpdate
+        Cache.LastGradientUpdate = 0
         local t = (math.sin(State.Watermark.GradientTime / WatermarkConfig.gradientSpeed * 2 * math.pi) + 1) / 2
-        for _, segment in ipairs(Elements.Watermark.LogoSegments) do
-            local gradient = segment:FindFirstChild("UIGradient")
-            if gradient then
-                gradient.Color = ColorSequence.new(WatermarkConfig.gradientColor1:Lerp(WatermarkConfig.gradientColor2, t), WatermarkConfig.gradientColor2:Lerp(WatermarkConfig.gradientColor1, t))
-            end
+        local color1 = WatermarkConfig.gradientColor1
+        local color2 = WatermarkConfig.gradientColor2
+        for _, segmentData in ipairs(Elements.Watermark.LogoSegments) do
+            segmentData.Gradient.Color = ColorSequence.new(color1:Lerp(color2, t), color2:Lerp(color1, t))
         end
     end
 
@@ -342,32 +337,72 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    local function handleWatermarkDrag(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+    -- Общий обработчик ввода
+    local function handleInput(input, isMenuButton)
+        local target = isMenuButton and State.MenuButton or State.Watermark
+        local element = isMenuButton and buttonFrame or Elements.Watermark.Container
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.Begin then
             local mousePos = Core.Services.UserInputService:GetMouseLocation()
-            local container = Elements.Watermark.Container
-            if container and mousePos.X >= container.Position.X.Offset and mousePos.X <= container.Position.X.Offset + container.Size.X.Offset and
-               mousePos.Y >= container.Position.Y.Offset and mousePos.Y <= container.Position.Y.Offset + container.Size.Y.Offset then
-                State.Watermark.Dragging = true
-                State.Watermark.DragStart = mousePos
-                State.Watermark.StartPos = container.Position
+            if element and mousePos.X >= element.Position.X.Offset and mousePos.X <= element.Position.X.Offset + element.Size.X.Offset and
+               mousePos.Y >= element.Position.Y.Offset and mousePos.Y <= element.Position.Y.Offset + element.Size.Y.Offset then
+                target.Dragging = true
+                target.DragStart = mousePos
+                target.StartPos = element.Position
             end
-        elseif input.UserInputType == Enum.UserInputType.MouseMovement and State.Watermark.Dragging then
+            if isMenuButton then
+                target.TouchStartTime = tick()
+            end
+        elseif input.UserInputType == Enum.UserInputType.MouseMovement and target.Dragging then
             local mousePos = Core.Services.UserInputService:GetMouseLocation()
-            local delta = mousePos - State.Watermark.DragStart
-            Elements.Watermark.Container.Position = UDim2.new(0, State.Watermark.StartPos.X.Offset + delta.X, 0, State.Watermark.StartPos.Y.Offset + delta.Y)
+            local delta = mousePos - target.DragStart
+            element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
         elseif input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.End then
-            State.Watermark.Dragging = false
+            if isMenuButton and target.TouchStartTime > 0 and tick() - target.TouchStartTime < target.TouchThreshold then
+                emulateRightControl()
+            end
+            target.Dragging = false
+            target.TouchStartTime = 0
+        elseif input.UserInputType == Enum.UserInputType.Touch then
+            if input.UserInputState == Enum.UserInputState.Begin then
+                target.TouchStartTime = tick()
+                local mousePos = input.Position
+                if element and mousePos.X >= element.Position.X.Offset and mousePos.X <= element.Position.X.Offset + element.Size.X.Offset and
+                   mousePos.Y >= element.Position.Y.Offset and mousePos.Y <= element.Position.Y.Offset + element.Size.Y.Offset then
+                    target.Dragging = true
+                    target.DragStart = mousePos
+                    target.StartPos = element.Position
+                end
+            elseif input.UserInputState == Enum.UserInputState.Change and target.Dragging then
+                local mousePos = input.Position
+                local delta = mousePos - target.DragStart
+                element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
+            elseif input.UserInputState == Enum.UserInputState.End then
+                if isMenuButton and target.TouchStartTime > 0 and tick() - target.TouchStartTime < target.TouchThreshold then
+                    emulateRightControl()
+                end
+                target.Dragging = false
+                target.TouchStartTime = 0
+            end
         end
     end
 
-    Core.Services.UserInputService.InputBegan:Connect(handleWatermarkDrag)
-    Core.Services.UserInputService.InputChanged:Connect(handleWatermarkDrag)
-    Core.Services.UserInputService.InputEnded:Connect(handleWatermarkDrag)
+    Core.Services.UserInputService.InputBegan:Connect(function(input)
+        handleInput(input, true)
+        handleInput(input, false)
+    end)
+    Core.Services.UserInputService.InputChanged:Connect(function(input)
+        handleInput(input, true)
+        handleInput(input, false)
+    end)
+    Core.Services.UserInputService.InputEnded:Connect(function(input)
+        handleInput(input, true)
+        handleInput(input, false)
+    end)
 
-    initWatermark()
+    task.defer(initWatermark)
 
-    Core.Services.RunService.RenderStepped:Connect(function(deltaTime)
+    Core.Services.RunService.Heartbeat:Connect(function(deltaTime)
         if State.Watermark.Enabled then
             updateGradientCircle(deltaTime)
             if WatermarkConfig.showFPS and Elements.Watermark.FPSLabel then
@@ -380,8 +415,12 @@ function Visuals.Init(UI, Core, notify)
                 end
             end
             if WatermarkConfig.showTime and Elements.Watermark.TimeLabel then
-                local currentTime = os.date("*t")
-                Elements.Watermark.TimeLabel.Text = string.format("%02d:%02d:%02d", currentTime.hour, currentTime.min, currentTime.sec)
+                local currentTime = tick()
+                if currentTime - State.Watermark.LastTimeUpdate >= State.Watermark.TimeUpdateInterval then
+                    local timeData = os.date("*t")
+                    Elements.Watermark.TimeLabel.Text = string.format("%02d:%02d:%02d", timeData.hour, timeData.min, timeData.sec)
+                    State.Watermark.LastTimeUpdate = currentTime
+                end
             end
         end
     end)
@@ -429,7 +468,7 @@ function Visuals.Init(UI, Core, notify)
                 Precision = 0,
                 Callback = function(value)
                     WatermarkConfig.segmentCount = value
-                    initWatermark()
+                    task.defer(initWatermark)
                     notify("Watermark", "Segment Count set to: " .. value)
                 end
             })
@@ -438,7 +477,7 @@ function Visuals.Init(UI, Core, notify)
                 Default = WatermarkConfig.showFPS,
                 Callback = function(value)
                     WatermarkConfig.showFPS = value
-                    initWatermark()
+                    task.defer(initWatermark)
                     notify("Watermark", "Show FPS " .. (value and "Enabled" or "Disabled"), true)
                 end
             })
@@ -447,7 +486,7 @@ function Visuals.Init(UI, Core, notify)
                 Default = WatermarkConfig.showTime,
                 Callback = function(value)
                     WatermarkConfig.showTime = value
-                    initWatermark()
+                    task.defer(initWatermark)
                     notify("Watermark", "Show Time " .. (value and "Enabled" or "Disabled"), true)
                 end
             })
@@ -460,7 +499,7 @@ function Visuals.Init(UI, Core, notify)
                 Default = WatermarkConfig.gradientColor1,
                 Callback = function(value)
                     WatermarkConfig.gradientColor1 = value
-                    initWatermark()
+                    task.defer(initWatermark)
                     notify("Syllinse", "Gradient Color 1 set to: R=" .. math.floor(value.R * 255) .. ", G=" .. math.floor(value.G * 255) .. ", B=" .. math.floor(value.B * 255))
                 end
             })
@@ -469,7 +508,7 @@ function Visuals.Init(UI, Core, notify)
                 Default = WatermarkConfig.gradientColor2,
                 Callback = function(value)
                     WatermarkConfig.gradientColor2 = value
-                    initWatermark()
+                    task.defer(initWatermark)
                     notify("Syllinse", "Gradient Color 2 set to: R=" .. math.floor(value.R * 255) .. ", G=" .. math.floor(value.G * 255) .. ", B=" .. math.floor(value.B * 255))
                 end
             })
