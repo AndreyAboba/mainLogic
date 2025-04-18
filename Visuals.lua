@@ -1,7 +1,6 @@
 local Visuals = {}
 
 function Visuals.Init(UI, Core, notify)
-    -- Общие состояния
     local State = {
         MenuButton = {
             Enabled = false,
@@ -24,7 +23,6 @@ function Visuals.Init(UI, Core, notify)
         }
     }
 
-    -- Конфигурация Watermark
     local WatermarkConfig = {
         gradientSpeed = 2,
         segmentCount = 12,
@@ -36,7 +34,6 @@ function Visuals.Init(UI, Core, notify)
         gradientUpdateInterval = 0.1
     }
 
-    -- ESP
     local ESP = {
         Settings = {
             Enabled = { Value = false, Default = false },
@@ -67,16 +64,13 @@ function Visuals.Init(UI, Core, notify)
     ESP.Settings.GradientColor1 = ESP.Settings.GradientColor1 or Color3.fromRGB(0, 0, 255)
     ESP.Settings.GradientColor2 = ESP.Settings.GradientColor2 or Color3.fromRGB(147, 112, 219)
 
-    -- Кэш
     local Cache = {
         TextBounds = {},
         LastGradientUpdate = 0
     }
 
-    -- Элементы UI
     local Elements = { Watermark = {} }
 
-    -- Menu Button
     local buttonGui = Instance.new("ScreenGui")
     buttonGui.Name = "MenuToggleButtonGui"
     buttonGui.Parent = Core.Services.CoreGuiService
@@ -141,7 +135,6 @@ function Visuals.Init(UI, Core, notify)
         end
     end)
 
-    -- Watermark
     local function initWatermark()
         local elements = Elements.Watermark
         local savedPosition = elements.Container and elements.Container.Position or UDim2.new(0, 350, 0, 10)
@@ -471,7 +464,6 @@ function Visuals.Init(UI, Core, notify)
         end
     end)
 
-    -- ESP Логика
     local ESPGui = Instance.new("ScreenGui")
     ESPGui.Name = "ESPTextGui"
     ESPGui.ResetOnSpawn = false
@@ -536,7 +528,7 @@ function Visuals.Init(UI, Core, notify)
         esp.NameDrawing.Font = ESP.Settings.TextFont.Value
         esp.NameDrawing.Center = true
         esp.NameDrawing.Outline = true
-        esp.NameDrawing.Visible = ESP.Settings.TextMethod.Value == "Drawing" and ESP.Settings.ShowNames.Value
+        esp.NameDrawing.Visible = false
 
         if ESP.Settings.TextMethod.Value == "GUI" then
             esp.NameGui = Instance.new("TextLabel")
@@ -548,7 +540,7 @@ function Visuals.Init(UI, Core, notify)
             esp.NameGui.TextStrokeTransparency = 0
             esp.NameGui.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
             esp.NameGui.TextXAlignment = Enum.TextXAlignment.Center
-            esp.NameGui.Visible = ESP.Settings.ShowNames.Value
+            esp.NameGui.Visible = false
             esp.NameGui.Parent = ESPGui
             ESP.GuiElements[player] = esp.NameGui
         end
@@ -604,7 +596,7 @@ function Visuals.Init(UI, Core, notify)
                 continue
             end
 
-            local character = workspace:FindFirstChild(player.Name)
+            local character = player.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             local humanoid = character and character:FindFirstChild("Humanoid")
             local head = character and character:FindFirstChild("Head")
@@ -626,7 +618,7 @@ function Visuals.Init(UI, Core, notify)
                 local speed = esp.LastPosition and (rootPos - esp.LastPosition).Magnitude / timeSinceLastUpdate or 0
                 local shouldUpdate = positionChanged or healthChanged or visibilityChanged or speed > 50
 
-                if not shouldUpdate then
+                if not shouldUpdate and esp.LastVisible then
                     continue
                 end
 
@@ -646,7 +638,7 @@ function Visuals.Init(UI, Core, notify)
                             end
                         end
                     end
-                    local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint - 0.5, rootPart.Position.Z))
+                    local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
 
                     local height = math.abs(headPos.Y - feetPos.Y)
                     local width = height * 0.6
@@ -706,8 +698,8 @@ function Visuals.Init(UI, Core, notify)
                                     esp.Filled.PointC = bottomRight
                                     esp.Filled.PointD = bottomLeft
                                 else
-                                    esp.Filled.Position = Vector2.new((topLeft.X + bottomRight.X) / 2, (topLeft.Y + bottomRight.Y) / 2)
-                                    esp.Filled.Size = math.min(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
+                                    esp.Filled.Position = Vector2.new(topLeft.X, topLeft.Y)
+                                    esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
                                 end
                                 esp.Filled.Color = gradientColor
                                 esp.Filled.Transparency = 1 - ESP.Settings.FilledTransparency.Value
@@ -738,8 +730,8 @@ function Visuals.Init(UI, Core, notify)
                                     esp.Filled.PointC = bottomRight
                                     esp.Filled.PointD = bottomLeft
                                 else
-                                    esp.Filled.Position = Vector2.new((topLeft.X + bottomRight.X) / 2, (topLeft.Y + bottomRight.Y) / 2)
-                                    esp.Filled.Size = math.min(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
+                                    esp.Filled.Position = Vector2.new(topLeft.X, topLeft.Y)
+                                    esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
                                 end
                                 esp.Filled.Color = baseColor
                                 esp.Filled.Transparency = 1 - ESP.Settings.FilledTransparency.Value
@@ -767,15 +759,15 @@ function Visuals.Init(UI, Core, notify)
                             barEnd = Vector2.new(topLeft.X - barWidth - 2, topLeft.Y + barLength)
                             esp.HealthBar.Background.From = barStart
                             esp.HealthBar.Background.To = barEnd
-                            esp.HealthBar.Foreground.From = barStart
-                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barStart.Y + barLength * healthPercent)
+                            esp.HealthBar.Foreground.From = Vector2.new(barStart.X, barEnd.Y)
+                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barEnd.Y - barLength * healthPercent)
                         elseif ESP.Settings.BarMethod.Value == "Right" then
                             barStart = Vector2.new(topRight.X + 2, topRight.Y)
                             barEnd = Vector2.new(topRight.X + 2, topRight.Y + barLength)
                             esp.HealthBar.Background.From = barStart
                             esp.HealthBar.Background.To = barEnd
-                            esp.HealthBar.Foreground.From = barStart
-                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barStart.Y + barLength * healthPercent)
+                            esp.HealthBar.Foreground.From = Vector2.new(barStart.X, barEnd.Y)
+                            esp.HealthBar.Foreground.To = Vector2.new(barStart.X, barEnd.Y - barLength * healthPercent)
                         elseif ESP.Settings.BarMethod.Value == "Bottom" then
                             barStart = Vector2.new(topLeft.X, bottomLeft.Y + 2)
                             barEnd = Vector2.new(topRight.X, bottomRight.Y + 2)
@@ -874,7 +866,6 @@ function Visuals.Init(UI, Core, notify)
         updateESP()
     end)
 
-    -- UI Integration
     if UI.Tabs and UI.Tabs.Visuals then
         if UI.Sections and UI.Sections.MenuButton then
             UI.Sections.MenuButton:Header({ Name = "Menu Button Settings" })
@@ -963,7 +954,6 @@ function Visuals.Init(UI, Core, notify)
             })
         end
 
-        -- ESP UI
         if UI.Sections and UI.Sections.ESP then
             UI.Sections.ESP:Header({ Name = "ESP Settings" })
             UI.Sections.ESP:Toggle({
