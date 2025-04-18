@@ -36,6 +36,32 @@ function Visuals.Init(UI, Core, notify)
         gradientUpdateInterval = 0.1
     }
 
+    local ESP = {
+        Settings = {
+            Enabled = { Value = false, Default = false },
+            EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
+            FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
+            TeamCheck = { Value = true, Default = true },
+            Thickness = { Value = 1, Default = 1 },
+            Transparency = { Value = 0.2, Default = 0.2 },
+            TextSize = { Value = 14, Default = 14 },
+            TextFont = { Value = Drawing.Fonts.Plex, Default = Drawing.Fonts.Plex },
+            TextMethod = { Value = "Drawing", Default = "Drawing" },
+            ShowBox = { Value = true, Default = true },
+            ShowNames = { Value = true, Default = true },
+            GradientEnabled = { Value = false, Default = false },
+            FilledEnabled = { Value = false, Default = false },
+            FilledTransparency = { Value = 0.5, Default = 0.5 },
+            GradientSpeed = { Value = 2, Default = 2 },
+            CornerRadius = { Value = 0, Default = 0 },
+            HealthBarEnabled = { Value = false, Default = false },
+            BarMethod = { Value = "Left", Default = "Left" }
+        },
+        Elements = {},
+        GuiElements = {},
+        LastNotificationTime = 0,
+        NotificationDelay = 5
+    }
     -- Кэш
     local Cache = {
         TextBounds = {},
@@ -530,5 +556,249 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 end
+
+
+-- ESP UI
+if UI.Sections.ESP then
+    UI.Sections.ESP:Header({ Name = "ESP Settings" })
+    UI.Sections.ESP:Toggle({
+        Name = "Enabled",
+        Default = ESP.Settings.Enabled.Default,
+        Callback = function(value)
+            ESP.Settings.Enabled.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "ESP " .. (value and "Enabled" or "Disabled"), true)
+            end
+        end
+    })
+    UI.Sections.ESP:Colorpicker({
+        Name = "Enemy Color",
+        Default = ESP.Settings.EnemyColor.Default,
+        Callback = function(value)
+            ESP.Settings.EnemyColor.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Enemy Color set to: R=" .. math.floor(value.R * 255) .. ", G=" .. math.floor(value.G * 255) .. ", B=" .. math.floor(value.B * 255))
+            end
+        end
+    })
+    UI.Sections.ESP:Colorpicker({
+        Name = "Friend Color",
+        Default = ESP.Settings.FriendColor.Default,
+        Callback = function(value)
+            ESP.Settings.FriendColor.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Friend Color set to: R=" .. math.floor(value.R * 255) .. ", G=" .. math.floor(value.G * 255) .. ", B=" .. math.floor(value.B * 255))
+            end
+        end
+    })
+    UI.Sections.ESP:Toggle({
+        Name = "Friend Check",
+        Default = ESP.Settings.TeamCheck.Default,
+        Callback = function(value)
+            ESP.Settings.TeamCheck.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Friend Check " .. (value and "Enabled" or "Disabled"), true)
+            end
+        end
+    })
+    UI.Sections.ESP:Slider({
+        Name = "Thickness",
+        Minimum = 1,
+        Maximum = 5,
+        Default = ESP.Settings.Thickness.Default,
+        Precision = 0,
+        Callback = function(value)
+            ESP.Settings.Thickness.Value = value
+            for _, esp in pairs(ESP.Elements) do
+                for _, line in pairs(esp.BoxLines) do
+                    line.Thickness = value
+                end
+                esp.HealthBar.Background.Thickness = value * 2
+                esp.HealthBar.Foreground.Thickness = value * 2
+            end
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Thickness set to: " .. value)
+            end
+        end
+    })
+    UI.Sections.ESP:Slider({
+        Name = "Transparency",
+        Minimum = 0,
+        Maximum = 1,
+        Default = ESP.Settings.Transparency.Default,
+        Precision = 1,
+        Callback = function(value)
+            ESP.Settings.Transparency.Value = value
+            for _, esp in pairs(ESP.Elements) do
+                for _, line in pairs(esp.BoxLines) do
+                    line.Transparency = 1 - value
+                end
+                esp.HealthBar.Background.Transparency = 1 - value
+                esp.HealthBar.Foreground.Transparency = 1 - value
+            end
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Transparency set to: " .. value)
+            end
+        end
+    })
+    UI.Sections.ESP:Slider({
+        Name = "Text Size",
+        Minimum = 10,
+        Maximum = 30,
+        Default = ESP.Settings.TextSize.Default,
+        Precision = 0,
+        Callback = function(value)
+            ESP.Settings.TextSize.Value = value
+            for _, esp in pairs(ESP.Elements) do
+                esp.NameDrawing.Size = value
+                if esp.NameGui then esp.NameGui.TextSize = value end
+            end
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Text Size set to: " .. value)
+            end
+        end
+    })
+    UI.Sections.ESP:Dropdown({
+        Name = "Text Font",
+        Options = {"UI", "System", "Plex", "Monospace"},
+        Default = "Plex",
+        Callback = function(value)
+            local fontMap = {
+                ["UI"] = Drawing.Fonts.UI,
+                ["System"] = Drawing.Fonts.System,
+                ["Plex"] = Drawing.Fonts.Plex,
+                ["Monospace"] = Drawing.Fonts.Monospace
+            }
+            ESP.Settings.TextFont.Value = fontMap[value] or Drawing.Fonts.Plex
+            for _, esp in pairs(ESP.Elements) do
+                esp.NameDrawing.Font = ESP.Settings.TextFont.Value
+            end
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Text Font set to: " .. value .. " (only for Drawing method)", true)
+            end
+        end
+    })
+    UI.Sections.ESP:Dropdown({
+        Name = "Text Method",
+        Options = {"Drawing", "GUI"},
+        Default = ESP.Settings.TextMethod.Default,
+        Callback = function(value)
+            ESP.Settings.TextMethod.Value = value
+            for _, player in pairs(Core.Services.Players:GetPlayers()) do
+                if player ~= Core.PlayerData.LocalPlayer then
+                    removeESP(player)
+                    createESP(player)
+                end
+            end
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Text Method set to: " .. value, true)
+            end
+        end
+    })
+    UI.Sections.ESP:Toggle({
+        Name = "Show Box",
+        Default = ESP.Settings.ShowBox.Default,
+        Callback = function(value)
+            ESP.Settings.ShowBox.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Box " .. (value and "Enabled" or "Disabled"), true)
+            end
+        end
+    })
+    UI.Sections.ESP:Toggle({
+        Name = "Show Names",
+        Default = ESP.Settings.ShowNames.Default,
+        Callback = function(value)
+            ESP.Settings.ShowNames.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Names " .. (value and "Enabled" or "Disabled"), true)
+            end
+        end
+    })
+    UI.Sections.ESP:Toggle({
+        Name = "Gradient Enabled",
+        Default = ESP.Settings.GradientEnabled.Default,
+        Callback = function(value)
+            ESP.Settings.GradientEnabled.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Gradient " .. (value and "Enabled" or "Disabled"), true)
+            end
+        end
+    })
+    UI.Sections.ESP:Toggle({
+        Name = "Filled Enabled",
+        Default = ESP.Settings.FilledEnabled.Default,
+        Callback = function(value)
+            ESP.Settings.FilledEnabled.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Filled " .. (value and "Enabled" or "Disabled"), true)
+            end
+        end
+    })
+    UI.Sections.ESP:Slider({
+        Name = "Filled Transparency",
+        Minimum = 0,
+        Maximum = 1,
+        Default = ESP.Settings.FilledTransparency.Default,
+        Precision = 1,
+        Callback = function(value)
+            ESP.Settings.FilledTransparency.Value = value
+            for _, esp in pairs(ESP.Elements) do
+                esp.Filled.Transparency = 1 - value
+            end
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Filled Transparency set to: " .. value)
+            end
+        end
+    })
+    UI.Sections.ESP:Slider({
+        Name = "Gradient Speed",
+        Minimum = 1,
+        Maximum = 5,
+        Default = ESP.Settings.GradientSpeed.Default,
+        Precision = 1,
+        Callback = function(value)
+            ESP.Settings.GradientSpeed.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Gradient Speed set to: " .. value)
+            end
+        end
+    })
+    UI.Sections.ESP:Slider({
+        Name = "Corner Radius",
+        Minimum = 0,
+        Maximum = 20,
+        Default = ESP.Settings.CornerRadius.Default,
+        Precision = 0,
+        Callback = function(value)
+            ESP.Settings.CornerRadius.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Corner Radius set to: " .. value)
+            end
+        end
+    })
+    UI.Sections.ESP:Toggle({
+        Name = "Health Bar Enabled",
+        Default = ESP.Settings.HealthBarEnabled.Default,
+        Callback = function(value)
+            ESP.Settings.HealthBarEnabled.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Health Bar " .. (value and "Enabled" or "Disabled"), true)
+            end
+        end
+    })
+    UI.Sections.ESP:Dropdown({
+        Name = "Bar Method",
+        Options = {"Left", "Right", "Bottom", "Top"},
+        Default = ESP.Settings.BarMethod.Default,
+        Callback = function(value)
+            ESP.Settings.BarMethod.Value = value
+            if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                notify("ESP", "Bar Method set to: " .. value, true)
+            end
+        end
+    })
+end
+
 
 return Visuals
