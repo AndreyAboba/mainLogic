@@ -75,7 +75,7 @@ FastAttack.Start = function()
         for _, item in pairs(backpack:GetChildren()) do
             if item.Name == "fists" or item:GetAttribute("Speed") then
                 pcall(function()
-                    item:SetAttribute("Speed", 0) -- Устанавливаем фиксированное значение 0
+                    item:SetAttribute("Speed", 0)
                 end)
             end
         end
