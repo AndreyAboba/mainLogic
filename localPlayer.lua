@@ -1,6 +1,10 @@
 -- Модуль LocalPlayer: Timer, Disabler, Speed, HighJump, NoRagdoll, AntiStamina, FastAttack
 local LocalPlayer = {}
 
+-- Локальные переменные для хранения Core и notify
+local Core
+local notify
+
 -- Статусы
 local TimerStatus = { Running = false, Connection = nil, Speed = 2.5, Key = nil, Enabled = false }
 local DisablerStatus = { Running = false, Connection = nil, Key = nil, Enabled = false }
@@ -404,7 +408,7 @@ end
 NoRagdoll.Stop = function()
     if NoRagdollStatus.Connection then
         NoRagdollStatus.Connection:Disconnect()
-        NoRagdollStatus.Connection = nil
+        FastAttackStatus.Connection = nil
     end
     notify("NoRagdoll", "Stopped", true)
 end
@@ -510,7 +514,11 @@ AntiStamina.Stop = function()
 end
 
 -- Инициализация модуля
-function LocalPlayer.Init(UI, Core, notify)
+function LocalPlayer.Init(UI, core, notifyFunc)
+    -- Сохраняем Core и notify локально
+    Core = core
+    notify = notifyFunc
+
     -- Регистрация глобальных функций
     _G.setTimerSpeed = Timer.SetSpeed
     _G.setSpeed = Speed.SetSpeed
