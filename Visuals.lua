@@ -2,25 +2,8 @@ local Visuals = {}
 
 function Visuals.Init(UI, Core, notify)
     local State = {
-        MenuButton = {
-            Enabled = false,
-            Dragging = false,
-            DragStart = nil,
-            StartPos = nil,
-            TouchStartTime = 0,
-            TouchThreshold = 0.2
-        },
-        Watermark = {
-            Enabled = true,
-            GradientTime = 0,
-            FrameCount = 0,
-            AccumulatedTime = 0,
-            Dragging = false,
-            DragStart = nil,
-            StartPos = nil,
-            LastTimeUpdate = 0,
-            TimeUpdateInterval = 1
-        }
+        MenuButton = { Enabled = false, Dragging = false, DragStart = nil, StartPos = nil, TouchStartTime = 0, TouchThreshold = 0.2 },
+        Watermark = { Enabled = true, GradientTime = 0, FrameCount = 0, AccumulatedTime = 0, Dragging = false, DragStart = nil, StartPos = nil, LastTimeUpdate = 0, TimeUpdateInterval = 1 }
     }
 
     local WatermarkConfig = {
@@ -28,8 +11,6 @@ function Visuals.Init(UI, Core, notify)
         segmentCount = 12,
         showFPS = true,
         showTime = true,
-        gradientColor1 = Color3.fromRGB(0, 0, 255),
-        gradientColor2 = Color3.fromRGB(147, 112, 219),
         updateInterval = 0.5,
         gradientUpdateInterval = 0.1
     }
@@ -39,6 +20,8 @@ function Visuals.Init(UI, Core, notify)
             Enabled = { Value = false, Default = false },
             EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
             FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
+            GradientColor1 = { Value = Color3.fromRGB(0, 0, 255), Default = Color3.fromRGB(0, 0, 255) },
+            GradientColor2 = { Value = Color3.fromRGB(147, 112, 219), Default = Color3.fromRGB(147, 112, 219) },
             TeamCheck = { Value = true, Default = true },
             Thickness = { Value = 1, Default = 1 },
             Transparency = { Value = 0.2, Default = 0.2 },
@@ -61,14 +44,7 @@ function Visuals.Init(UI, Core, notify)
         NotificationDelay = 5
     }
 
-    ESP.Settings.GradientColor1 = ESP.Settings.GradientColor1 or Color3.fromRGB(0, 0, 255)
-    ESP.Settings.GradientColor2 = ESP.Settings.GradientColor2 or Color3.fromRGB(147, 112, 219)
-
-    local Cache = {
-        TextBounds = {},
-        LastGradientUpdate = 0
-    }
-
+    local Cache = { TextBounds = {}, LastGradientUpdate = 0 }
     local Elements = { Watermark = {} }
 
     local buttonGui = Instance.new("ScreenGui")
@@ -135,12 +111,25 @@ function Visuals.Init(UI, Core, notify)
         end
     end)
 
+    local function createFrameWithPadding(parent, size, backgroundColor, transparency)
+        local frame = Instance.new("Frame")
+        frame.Size = size
+        frame.BackgroundColor3 = backgroundColor
+        frame.BackgroundTransparency = transparency
+        frame.BorderSizePixel = 0
+        frame.Parent = parent
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 5)
+        local padding = Instance.new("UIPadding")
+        padding.PaddingLeft = UDim.new(0, 5)
+        padding.PaddingRight = UDim.new(0, 5)
+        padding.Parent = frame
+        return frame
+    end
+
     local function initWatermark()
         local elements = Elements.Watermark
         local savedPosition = elements.Container and elements.Container.Position or UDim2.new(0, 350, 0, 10)
-        if elements.Gui then
-            elements.Gui:Destroy()
-        end
+        if elements.Gui then elements.Gui:Destroy() end
         elements = {}
         Elements.Watermark = elements
 
@@ -166,14 +155,8 @@ function Visuals.Init(UI, Core, notify)
         layout.Padding = UDim.new(0, 5)
         layout.Parent = container
 
-        local logoBackground = Instance.new("Frame")
-        logoBackground.Size = UDim2.new(0, 24, 0, 24)
-        logoBackground.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-        logoBackground.BackgroundTransparency = 0.3
-        logoBackground.BorderSizePixel = 0
-        logoBackground.Parent = container
+        local logoBackground = createFrameWithPadding(container, UDim2.new(0, 24, 0, 24), Color3.fromRGB(20, 30, 50), 0.3)
         elements.LogoBackground = logoBackground
-        Instance.new("UICorner", logoBackground).CornerRadius = UDim.new(0, 5)
 
         local logoFrame = Instance.new("Frame")
         logoFrame.Size = UDim2.new(0, 20, 0, 20)
@@ -194,20 +177,14 @@ function Visuals.Init(UI, Core, notify)
             segment.Parent = logoFrame
             Instance.new("UICorner", segment).CornerRadius = UDim.new(0.5, 0)
             local gradient = Instance.new("UIGradient")
-            gradient.Color = ColorSequence.new(WatermarkConfig.gradientColor1, WatermarkConfig.gradientColor2)
+            gradient.Color = ColorSequence.new(ESP.Settings.GradientColor1.Value, ESP.Settings.GradientColor2.Value)
             gradient.Rotation = (i - 1) * (360 / segmentCount)
             gradient.Parent = segment
             elements.LogoSegments[i] = { Segment = segment, Gradient = gradient }
         end
 
-        local playerNameFrame = Instance.new("Frame")
-        playerNameFrame.Size = UDim2.new(0, 0, 0, 20)
-        playerNameFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-        playerNameFrame.BackgroundTransparency = 0.3
-        playerNameFrame.BorderSizePixel = 0
-        playerNameFrame.Parent = container
+        local playerNameFrame = createFrameWithPadding(container, UDim2.new(0, 0, 0, 20), Color3.fromRGB(20, 30, 50), 0.3)
         elements.PlayerNameFrame = playerNameFrame
-        Instance.new("UICorner", playerNameFrame).CornerRadius = UDim.new(0, 5)
 
         local playerNameLabel = Instance.new("TextLabel")
         playerNameLabel.Size = UDim2.new(0, 0, 1, 0)
@@ -221,20 +198,9 @@ function Visuals.Init(UI, Core, notify)
         elements.PlayerNameLabel = playerNameLabel
         Cache.TextBounds.PlayerName = playerNameLabel.TextBounds.X
 
-        local padding = Instance.new("UIPadding")
-        padding.PaddingLeft = UDim.new(0, 5)
-        padding.PaddingRight = UDim.new(0, 5)
-        padding.Parent = playerNameFrame
-
         if WatermarkConfig.showFPS then
-            local fpsFrame = Instance.new("Frame")
-            fpsFrame.Size = UDim2.new(0, 0, 0, 20)
-            fpsFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-            fpsFrame.BackgroundTransparency = 0.3
-            fpsFrame.BorderSizePixel = 0
-            fpsFrame.Parent = container
+            local fpsFrame = createFrameWithPadding(container, UDim2.new(0, 0, 0, 20), Color3.fromRGB(20, 30, 50), 0.3)
             elements.FPSFrame = fpsFrame
-            Instance.new("UICorner", fpsFrame).CornerRadius = UDim.new(0, 5)
 
             local fpsContainer = Instance.new("Frame")
             fpsContainer.Size = UDim2.new(0, 0, 0, 20)
@@ -268,22 +234,11 @@ function Visuals.Init(UI, Core, notify)
             fpsLabel.Parent = fpsContainer
             elements.FPSLabel = fpsLabel
             Cache.TextBounds.FPS = fpsLabel.TextBounds.X
-
-            local fpsPadding = Instance.new("UIPadding")
-            fpsPadding.PaddingLeft = UDim.new(0, 5)
-            fpsPadding.PaddingRight = UDim.new(0, 5)
-            fpsPadding.Parent = fpsFrame
         end
 
         if WatermarkConfig.showTime then
-            local timeFrame = Instance.new("Frame")
-            timeFrame.Size = UDim2.new(0, 0, 0, 20)
-            timeFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-            timeFrame.BackgroundTransparency = 0.3
-            timeFrame.BorderSizePixel = 0
-            timeFrame.Parent = container
+            local timeFrame = createFrameWithPadding(container, UDim2.new(0, 0, 0, 20), Color3.fromRGB(20, 30, 50), 0.3)
             elements.TimeFrame = timeFrame
-            Instance.new("UICorner", timeFrame).CornerRadius = UDim.new(0, 5)
 
             local timeContainer = Instance.new("Frame")
             timeContainer.Size = UDim2.new(0, 0, 0, 20)
@@ -317,11 +272,6 @@ function Visuals.Init(UI, Core, notify)
             timeLabel.Parent = timeContainer
             elements.TimeLabel = timeLabel
             Cache.TextBounds.Time = timeLabel.TextBounds.X
-
-            local timePadding = Instance.new("UIPadding")
-            timePadding.PaddingLeft = UDim.new(0, 5)
-            timePadding.PaddingRight = UDim.new(0, 5)
-            timePadding.Parent = timeFrame
         end
 
         local function updateSizes()
@@ -343,49 +293,37 @@ function Visuals.Init(UI, Core, notify)
                 elements.TimeFrame.Size = UDim2.new(0, elements.TimeContainer.Size.X.Offset + 10, 0, 20)
             end
 
-            local totalWidth = 0
-            local visibleChildren = 0
+            local totalWidth, visibleChildren = 0, 0
             for _, child in ipairs(container:GetChildren()) do
                 if child:IsA("GuiObject") and child.Visible then
-                    totalWidth = totalWidth + child.Size.X.Offset
-                    visibleChildren = visibleChildren + 1
+                    totalWidth += child.Size.X.Offset
+                    visibleChildren += 1
                 end
             end
-            totalWidth = totalWidth + (layout.Padding.Offset * math.max(0, visibleChildren - 1))
+            totalWidth += (layout.Padding.Offset * math.max(0, visibleChildren - 1))
             container.Size = UDim2.new(0, totalWidth, 0, 30)
         end
 
         updateSizes()
-        if elements.PlayerNameLabel then
-            elements.PlayerNameLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-                Cache.TextBounds.PlayerName = elements.PlayerNameLabel.TextBounds.X
-                updateSizes()
-            end)
-        end
-        if elements.FPSLabel then
-            elements.FPSLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-                Cache.TextBounds.FPS = elements.FPSLabel.TextBounds.X
-                updateSizes()
-            end)
-        end
-        if elements.TimeLabel then
-            elements.TimeLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-                Cache.TextBounds.Time = elements.TimeLabel.TextBounds.X
-                updateSizes()
-            end)
+        for _, label in pairs({elements.PlayerNameLabel, elements.FPSLabel, elements.TimeLabel}) do
+            if label then
+                label:GetPropertyChangedSignal("TextBounds"):Connect(function()
+                    Cache.TextBounds[label.Name] = label.TextBounds.X
+                    updateSizes()
+                end)
+            end
         end
     end
 
     local function updateGradientCircle(deltaTime)
         if not State.Watermark.Enabled or not Elements.Watermark.LogoSegments then return end
-        Cache.LastGradientUpdate = Cache.LastGradientUpdate + deltaTime
+        Cache.LastGradientUpdate += deltaTime
         if Cache.LastGradientUpdate < WatermarkConfig.gradientUpdateInterval then return end
 
-        State.Watermark.GradientTime = State.Watermark.GradientTime + Cache.LastGradientUpdate
+        State.Watermark.GradientTime += Cache.LastGradientUpdate
         Cache.LastGradientUpdate = 0
         local t = (math.sin(State.Watermark.GradientTime / WatermarkConfig.gradientSpeed * 2 * math.pi) + 1) / 2
-        local color1 = WatermarkConfig.gradientColor1
-        local color2 = WatermarkConfig.gradientColor2
+        local color1, color2 = ESP.Settings.GradientColor1.Value, ESP.Settings.GradientColor2.Value
         for _, segmentData in ipairs(Elements.Watermark.LogoSegments) do
             segmentData.Gradient.Color = ColorSequence.new(color1:Lerp(color2, t), color2:Lerp(color1, t))
         end
@@ -393,32 +331,32 @@ function Visuals.Init(UI, Core, notify)
 
     local function setWatermarkVisibility(visible)
         State.Watermark.Enabled = visible
-        if Elements.Watermark.Gui then
-            Elements.Watermark.Gui.Enabled = visible
-        end
+        if Elements.Watermark.Gui then Elements.Watermark.Gui.Enabled = visible end
     end
 
     local function handleWatermarkInput(input)
-        local target = State.Watermark
-        local element = Elements.Watermark.Container
+        local target, element = State.Watermark, Elements.Watermark.Container
+        local mousePos
 
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.Begin then
-            local mousePos = Core.Services.UserInputService:GetMouseLocation()
-            if element and mousePos.X >= element.Position.X.Offset and mousePos.X <= element.Position.X.Offset + element.Size.X.Offset and
-               mousePos.Y >= element.Position.Y.Offset and mousePos.Y <= element.Position.Y.Offset + element.Size.Y.Offset then
-                target.Dragging = true
-                target.DragStart = mousePos
-                target.StartPos = element.Position
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if input.UserInputState == Enum.UserInputState.Begin then
+                mousePos = Core.Services.UserInputService:GetMouseLocation()
+                if element and mousePos.X >= element.Position.X.Offset and mousePos.X <= element.Position.X.Offset + element.Size.X.Offset and
+                   mousePos.Y >= element.Position.Y.Offset and mousePos.Y <= element.Position.Y.Offset + element.Size.Y.Offset then
+                    target.Dragging = true
+                    target.DragStart = mousePos
+                    target.StartPos = element.Position
+                end
+            elseif input.UserInputState == Enum.UserInputState.End then
+                target.Dragging = false
             end
         elseif input.UserInputType == Enum.UserInputType.MouseMovement and target.Dragging then
-            local mousePos = Core.Services.UserInputService:GetMouseLocation()
+            mousePos = Core.Services.UserInputService:GetMouseLocation()
             local delta = mousePos - target.DragStart
             element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
-        elseif input.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputState == Enum.UserInputState.End then
-            target.Dragging = false
         elseif input.UserInputType == Enum.UserInputType.Touch then
+            mousePos = input.Position
             if input.UserInputState == Enum.UserInputState.Begin then
-                local mousePos = input.Position
                 if element and mousePos.X >= element.Position.X.Offset and mousePos.X <= element.Position.X.Offset + element.Size.X.Offset and
                    mousePos.Y >= element.Position.Y.Offset and mousePos.Y <= element.Position.Y.Offset + element.Size.Y.Offset then
                     target.Dragging = true
@@ -426,7 +364,6 @@ function Visuals.Init(UI, Core, notify)
                     target.StartPos = element.Position
                 end
             elseif input.UserInputState == Enum.UserInputState.Change and target.Dragging then
-                local mousePos = input.Position
                 local delta = mousePos - target.DragStart
                 element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
             elseif input.UserInputState == Enum.UserInputState.End then
@@ -442,24 +379,23 @@ function Visuals.Init(UI, Core, notify)
     task.defer(initWatermark)
 
     Core.Services.RunService.Heartbeat:Connect(function(deltaTime)
-        if State.Watermark.Enabled then
-            updateGradientCircle(deltaTime)
-            if WatermarkConfig.showFPS and Elements.Watermark.FPSLabel then
-                State.Watermark.FrameCount = State.Watermark.FrameCount + 1
-                State.Watermark.AccumulatedTime = State.Watermark.AccumulatedTime + deltaTime
-                if State.Watermark.AccumulatedTime >= WatermarkConfig.updateInterval then
-                    Elements.Watermark.FPSLabel.Text = tostring(math.floor(State.Watermark.FrameCount / State.Watermark.AccumulatedTime)) .. " FPS"
-                    State.Watermark.FrameCount = 0
-                    State.Watermark.AccumulatedTime = 0
-                end
+        if not State.Watermark.Enabled then return end
+        updateGradientCircle(deltaTime)
+        if WatermarkConfig.showFPS and Elements.Watermark.FPSLabel then
+            State.Watermark.FrameCount += 1
+            State.Watermark.AccumulatedTime += deltaTime
+            if State.Watermark.AccumulatedTime >= WatermarkConfig.updateInterval then
+                Elements.Watermark.FPSLabel.Text = tostring(math.floor(State.Watermark.FrameCount / State.Watermark.AccumulatedTime)) .. " FPS"
+                State.Watermark.FrameCount = 0
+                State.Watermark.AccumulatedTime = 0
             end
-            if WatermarkConfig.showTime and Elements.Watermark.TimeLabel then
-                local currentTime = tick()
-                if currentTime - State.Watermark.LastTimeUpdate >= State.Watermark.TimeUpdateInterval then
-                    local timeData = os.date("*t")
-                    Elements.Watermark.TimeLabel.Text = string.format("%02d:%02d:%02d", timeData.hour, timeData.min, timeData.sec)
-                    State.Watermark.LastTimeUpdate = currentTime
-                end
+        end
+        if WatermarkConfig.showTime and Elements.Watermark.TimeLabel then
+            local currentTime = tick()
+            if currentTime - State.Watermark.LastTimeUpdate >= State.Watermark.TimeUpdateInterval then
+                local timeData = os.date("*t")
+                Elements.Watermark.TimeLabel.Text = string.format("%02d:%02d:%02d", timeData.hour, timeData.min, timeData.sec)
+                State.Watermark.LastTimeUpdate = currentTime
             end
         end
     end)
@@ -475,9 +411,8 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    local UPDATE_INTERVAL = 0.02
-    local lastUpdate = 0
-    local playerCache = {}
+    местного UPDATE_INTERVAL = 0.02
+    local lastUpdate, playerCache = 0, {}
 
     local function createESP(player)
         if ESP.Elements[player] then return end
@@ -549,29 +484,24 @@ function Visuals.Init(UI, Core, notify)
     end
 
     local function removeESP(player)
-        if ESP.Elements[player] then
-            for _, line in pairs(ESP.Elements[player].BoxLines) do
-                line:Remove()
-            end
-            ESP.Elements[player].Filled:Remove()
-            ESP.Elements[player].HealthBar.Background:Remove()
-            ESP.Elements[player].HealthBar.Foreground:Remove()
-            ESP.Elements[player].NameDrawing:Remove()
-            if ESP.Elements[player].NameGui then
-                ESP.Elements[player].NameGui:Destroy()
-                ESP.GuiElements[player] = nil
-            end
-            ESP.Elements[player] = nil
-            playerCache[player] = nil
+        if not ESP.Elements[player] then return end
+        for _, line in pairs(ESP.Elements[player].BoxLines) do line:Remove() end
+        ESP.Elements[player].Filled:Remove()
+        ESP.Elements[player].HealthBar.Background:Remove()
+        ESP.Elements[player].HealthBar.Foreground:Remove()
+        ESP.Elements[player].NameDrawing:Remove()
+        if ESP.Elements[player].NameGui then
+            ESP.Elements[player].NameGui:Destroy()
+            ESP.GuiElements[player] = nil
         end
+        ESP.Elements[player] = nil
+        playerCache[player] = nil
     end
 
     local function updateESP()
         if not ESP.Settings.Enabled.Value then
             for _, esp in pairs(ESP.Elements) do
-                for _, line in pairs(esp.BoxLines) do
-                    line.Visible = false
-                end
+                for _, line in pairs(esp.BoxLines) do line.Visible = false end
                 esp.Filled.Visible = false
                 esp.HealthBar.Background.Visible = false
                 esp.HealthBar.Foreground.Visible = false
@@ -583,34 +513,26 @@ function Visuals.Init(UI, Core, notify)
         end
 
         local currentTime = tick()
-        if currentTime - lastUpdate < UPDATE_INTERVAL then
-            return
-        end
+        if currentTime - lastUpdate < UPDATE_INTERVAL then return end
         lastUpdate = currentTime
 
-        local camera = Core.PlayerData.Camera
-        local time = currentTime
+        local camera, time = Core.PlayerData.Camera, currentTime
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
-            if player == Core.PlayerData.LocalPlayer then
-                continue
-            end
+            if player == Core.PlayerData.LocalPlayer then continue end
 
             local character = player.Character
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
             local humanoid = character and character:FindFirstChild("Humanoid")
             local head = character and character:FindFirstChild("Head")
 
-            if not ESP.Elements[player] then
-                createESP(player)
-            end
+            if not ESP.Elements[player] then createESP(player) end
 
             local esp = ESP.Elements[player]
             if not esp then continue end
 
             if rootPart and humanoid and humanoid.Health > 0 then
                 local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
-
                 local positionChanged = not esp.LastPosition or (rootPos - esp.LastPosition).Magnitude > 0.5
                 local healthChanged = not esp.LastHealth or math.abs(humanoid.Health - esp.LastHealth) > 0.1
                 local visibilityChanged = onScreen ~= esp.LastVisible
@@ -618,9 +540,7 @@ function Visuals.Init(UI, Core, notify)
                 local speed = esp.LastPosition and (rootPos - esp.LastPosition).Magnitude / timeSinceLastUpdate or 0
                 local shouldUpdate = positionChanged or healthChanged or visibilityChanged or speed > 50
 
-                if not shouldUpdate and esp.LastVisible then
-                    continue
-                end
+                if not shouldUpdate and esp.LastVisible then continue end
 
                 esp.LastPosition = rootPos
                 esp.LastHealth = humanoid.Health
@@ -633,17 +553,13 @@ function Visuals.Init(UI, Core, notify)
                     for _, part in pairs(character:GetChildren()) do
                         if part:IsA("BasePart") then
                             local bottomY = part.Position.Y - part.Size.Y / 2
-                            if bottomY < lowestPoint then
-                                lowestPoint = bottomY
-                            end
+                            if bottomY < lowestPoint then lowestPoint = bottomY end
                         end
                     end
                     local feetPos = camera:WorldToViewportPoint(Vector3.new(rootPart.Position.X, lowestPoint, rootPart.Position.Z))
 
                     local height = math.abs(headPos.Y - feetPos.Y)
-                    local width = height * 0.6
-                    local maxWidth = 100
-                    width = math.min(width, maxWidth)
+                    local width = math.min(height * 0.6, 100)
 
                     local isFriend = esp.LastIsFriend
                     if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
@@ -653,8 +569,7 @@ function Visuals.Init(UI, Core, notify)
                     end
 
                     local baseColor = isFriend and ESP.Settings.FriendColor.Value or ESP.Settings.EnemyColor.Value
-                    local gradColor1 = ESP.Settings.GradientColor1
-                    local gradColor2 = isFriend and Color3.fromRGB(0, 255, 0) or ESP.Settings.GradientColor2
+                    local gradColor1, gradColor2 = ESP.Settings.GradientColor1.Value, isFriend and Color3.fromRGB(0, 255, 0) or ESP.Settings.GradientColor2.Value
 
                     local topLeft = Vector2.new(rootPos.X - width / 2, headPos.Y)
                     local topRight = Vector2.new(rootPos.X + width / 2, headPos.Y)
@@ -664,86 +579,52 @@ function Visuals.Init(UI, Core, notify)
                     if ESP.Settings.ShowBox.Value then
                         local radius = ESP.Settings.CornerRadius.Value
                         if radius > 0 then
-                            topLeft = topLeft + Vector2.new(radius, radius)
-                            topRight = topRight + Vector2.new(-radius, radius)
-                            bottomLeft = bottomLeft + Vector2.new(radius, -radius)
-                            bottomRight = bottomRight + Vector2.new(-radius, -radius)
+                            topLeft += Vector2.new(radius, radius)
+                            topRight += Vector2.new(-radius, radius)
+                            bottomLeft += Vector2.new(radius, -radius)
+                            bottomRight += Vector2.new(-radius, -radius)
                         end
 
+                        local color = baseColor
                         if ESP.Settings.GradientEnabled.Value then
-                            local gradientSpeed = ESP.Settings.GradientSpeed.Value * 0.5
-                            local t = (math.sin(time * gradientSpeed) + 1) / 2
-                            local gradientColor = gradColor1:Lerp(gradColor2, t)
+                            local t = (math.sin(time * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2
+                            color = gradColor1:Lerp(gradColor2, t)
+                        end
 
-                            for _, line in pairs(esp.BoxLines) do
-                                line.Color = gradientColor
-                                line.Thickness = ESP.Settings.Thickness.Value
-                                line.Transparency = 1 - ESP.Settings.Transparency.Value
-                                line.Visible = true
-                            end
+                        for _, line in pairs(esp.BoxLines) do
+                            line.Color = color
+                            line.Thickness = ESP.Settings.Thickness.Value
+                            line.Transparency = 1 - ESP.Settings.Transparency.Value
+                            line.Visible = true
+                        end
 
-                            esp.BoxLines.Top.From = topLeft
-                            esp.BoxLines.Top.To = topRight
-                            esp.BoxLines.Bottom.From = bottomLeft
-                            esp.BoxLines.Bottom.To = bottomRight
-                            esp.BoxLines.Left.From = topLeft
-                            esp.BoxLines.Left.To = bottomLeft
-                            esp.BoxLines.Right.From = topRight
-                            esp.BoxLines.Right.To = bottomRight
+                        esp.BoxLines.Top.From = topLeft
+                        esp.BoxLines.Top.To = topRight
+                        esp.BoxLines.Bottom.From = bottomLeft
+                        esp.BoxLines.Bottom.To = bottomRight
+                        esp.BoxLines.Left.From = topLeft
+                        esp.BoxLines.Left.To = bottomLeft
+                        esp.BoxLines.Right.From = topRight
+                        esp.BoxLines.Right.To = bottomRight
 
-                            if ESP.Settings.FilledEnabled.Value then
-                                if supportsQuad then
-                                    esp.Filled.PointA = topLeft
-                                    esp.Filled.PointB = topRight
-                                    esp.Filled.PointC = bottomRight
-                                    esp.Filled.PointD = bottomLeft
-                                else
-                                    esp.Filled.Position = Vector2.new(topLeft.X, topLeft.Y)
-                                    esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
-                                end
-                                esp.Filled.Color = gradientColor
-                                esp.Filled.Transparency = 1 - ESP.Settings.FilledTransparency.Value
-                                esp.Filled.Visible = true
+                        if ESP.Settings.FilledEnabled.Value then
+                            if supportsQuad then
+                                esp.Filled.PointA = topLeft
+                                esp.Filled.PointB = topRight
+                                esp.Filled.PointC = bottomRight
+                                esp.Filled.PointD = bottomLeft
                             else
-                                esp.Filled.Visible = false
+                                esp.Filled.Position = Vector2.new(topLeft.X, topLeft.Y)
+                                esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
                             end
+                            esp.Filled.Color = color
+                            esp.Filled.Transparency = 1 - ESP.Settings.FilledTransparency.Value
+                            esp.Filled.Visible = true
                         else
-                            for _, line in pairs(esp.BoxLines) do
-                                line.Color = baseColor
-                                line.Thickness = ESP.Settings.Thickness.Value
-                                line.Transparency = 1 - ESP.Settings.Transparency.Value
-                                line.Visible = true
-                            end
-                            esp.BoxLines.Top.From = topLeft
-                            esp.BoxLines.Top.To = topRight
-                            esp.BoxLines.Bottom.From = bottomLeft
-                            esp.BoxLines.Bottom.To = bottomRight
-                            esp.BoxLines.Left.From = topLeft
-                            esp.BoxLines.Left.To = bottomLeft
-                            esp.BoxLines.Right.From = topRight
-                            esp.BoxLines.Right.To = bottomRight
-
-                            if ESP.Settings.FilledEnabled.Value then
-                                if supportsQuad then
-                                    esp.Filled.PointA = topLeft
-                                    esp.Filled.PointB = topRight
-                                    esp.Filled.PointC = bottomRight
-                                    esp.Filled.PointD = bottomLeft
-                                else
-                                    esp.Filled.Position = Vector2.new(topLeft.X, topLeft.Y)
-                                    esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
-                                end
-                                esp.Filled.Color = baseColor
-                                esp.Filled.Transparency = 1 - ESP.Settings.FilledTransparency.Value
-                                esp.Filled.Visible = true
-                            else
-                                esp.Filled.Visible = false
-                            end
+                            esp.Filled.Visible = false
                         end
                     else
-                        for _, line in pairs(esp.BoxLines) do
-                            line.Visible = false
-                        end
+                        for _, line in pairs(esp.BoxLines) do line.Visible = false end
                         esp.Filled.Visible = false
                     end
 
@@ -793,8 +674,7 @@ function Visuals.Init(UI, Core, notify)
                     end
 
                     if ESP.Settings.ShowNames.Value then
-                        local gradientSpeed = ESP.Settings.GradientSpeed.Value * 0.5
-                        local t = (math.sin(time * gradientSpeed) + 1) / 2
+                        local t = (math.sin(time * ESP.Settings.GradientSpeed.Value * 0.5) + 1) / 2
                         local nameColor = ESP.Settings.GradientEnabled.Value and gradColor1:Lerp(gradColor2, t) or baseColor
                         local nameY = headPos.Y - 20
                         if ESP.Settings.HealthBarEnabled.Value and ESP.Settings.BarMethod.Value == "Top" then
@@ -822,9 +702,7 @@ function Visuals.Init(UI, Core, notify)
                         if esp.NameGui then esp.NameGui.Visible = false end
                     end
                 else
-                    for _, line in pairs(esp.BoxLines) do
-                        line.Visible = false
-                    end
+                    for _, line in pairs(esp.BoxLines) do line.Visible = false end
                     esp.Filled.Visible = false
                     esp.HealthBar.Background.Visible = false
                     esp.HealthBar.Foreground.Visible = false
@@ -832,9 +710,7 @@ function Visuals.Init(UI, Core, notify)
                     if esp.NameGui then esp.NameGui.Visible = false end
                 end
             else
-                for _, line in pairs(esp.BoxLines) do
-                    line.Visible = false
-                end
+                for _, line in pairs(esp.BoxLines) do line.Visible = false end
                 esp.Filled.Visible = false
                 esp.HealthBar.Background.Visible = false
                 esp.HealthBar.Foreground.Visible = false
@@ -845,26 +721,16 @@ function Visuals.Init(UI, Core, notify)
     end
 
     task.wait(1)
-
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player ~= Core.PlayerData.LocalPlayer then
-            createESP(player)
-        end
+        if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
     end
 
     Core.Services.Players.PlayerAdded:Connect(function(player)
-        if player ~= Core.PlayerData.LocalPlayer then
-            createESP(player)
-        end
+        if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
     end)
 
-    Core.Services.Players.PlayerRemoving:Connect(function(player)
-        removeESP(player)
-    end)
-
-    Core.Services.RunService.RenderStepped:Connect(function()
-        updateESP()
-    end)
+    Core.Services.Players.PlayerRemoving:Connect(removeESP)
+    Core.Services.RunService.RenderStepped:Connect(updateESP)
 
     if UI.Tabs and UI.Tabs.Visuals then
         if UI.Sections and UI.Sections.MenuButton then
@@ -936,18 +802,18 @@ function Visuals.Init(UI, Core, notify)
             UI.Sections.GradientColors:Header({ Name = "Gradient Colors" })
             UI.Sections.GradientColors:Colorpicker({
                 Name = "Gradient Color 1",
-                Default = WatermarkConfig.gradientColor1,
+                Default = ESP.Settings.GradientColor1.Default,
                 Callback = function(value)
-                    WatermarkConfig.gradientColor1 = value
+                    ESP.Settings.GradientColor1.Value = value
                     task.defer(initWatermark)
                     notify("Syllinse", "Gradient Color 1 set to: R=" .. math.floor(value.R * 255) .. ", G=" .. math.floor(value.G * 255) .. ", B=" .. math.floor(value.B * 255))
                 end
             })
             UI.Sections.GradientColors:Colorpicker({
                 Name = "Gradient Color 2",
-                Default = WatermarkConfig.gradientColor2,
+                Default = ESP.Settings.GradientColor2.Default,
                 Callback = function(value)
-                    WatermarkConfig.gradientColor2 = value
+                    ESP.Settings.GradientColor2.Value = value
                     task.defer(initWatermark)
                     notify("Syllinse", "Gradient Color 2 set to: R=" .. math.floor(value.R * 255) .. ", G=" .. math.floor(value.G * 255) .. ", B=" .. math.floor(value.B * 255))
                 end
@@ -1009,9 +875,7 @@ function Visuals.Init(UI, Core, notify)
                 Callback = function(value)
                     ESP.Settings.Thickness.Value = value
                     for _, esp in pairs(ESP.Elements) do
-                        for _, line in pairs(esp.BoxLines) do
-                            line.Thickness = value
-                        end
+                        for _, line in pairs(esp.BoxLines) do line.Thickness = value end
                         esp.HealthBar.Background.Thickness = value * 2
                         esp.HealthBar.Foreground.Thickness = value * 2
                     end
@@ -1030,9 +894,7 @@ function Visuals.Init(UI, Core, notify)
                 Callback = function(value)
                     ESP.Settings.Transparency.Value = value
                     for _, esp in pairs(ESP.Elements) do
-                        for _, line in pairs(esp.BoxLines) do
-                            line.Transparency = 1 - value
-                        end
+                        for _, line in pairs(esp.BoxLines) do line.Transparency = 1 - value end
                         esp.HealthBar.Background.Transparency = 1 - value
                         esp.HealthBar.Foreground.Transparency = 1 - value
                     end
@@ -1065,16 +927,9 @@ function Visuals.Init(UI, Core, notify)
                 Options = {"UI", "System", "Plex", "Monospace"},
                 Default = "Plex",
                 Callback = function(value)
-                    local fontMap = {
-                        ["UI"] = Drawing.Fonts.UI,
-                        ["System"] = Drawing.Fonts.System,
-                        ["Plex"] = Drawing.Fonts.Plex,
-                        ["Monospace"] = Drawing.Fonts.Monospace
-                    }
+                    local fontMap = { ["UI"] = Drawing.Fonts.UI, ["System"] = Drawing.Fonts.System, ["Plex"] = Drawing.Fonts.Plex, ["Monospace"] = Drawing.Fonts.Monospace }
                     ESP.Settings.TextFont.Value = fontMap[value] or Drawing.Fonts.Plex
-                    for _, esp in pairs(ESP.Elements) do
-                        esp.NameDrawing.Font = ESP.Settings.TextFont.Value
-                    end
+                    for _, esp in pairs(ESP.Elements) do esp.NameDrawing.Font = ESP.Settings.TextFont.Value end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
                         notify("ESP", "Text Font set to: " .. value .. " (only for Drawing method)", true)
@@ -1151,9 +1006,7 @@ function Visuals.Init(UI, Core, notify)
                 Precision = 1,
                 Callback = function(value)
                     ESP.Settings.FilledTransparency.Value = value
-                    for _, esp in pairs(ESP.Elements) do
-                        esp.Filled.Transparency = 1 - value
-                    end
+                    for _, esp in pairs(ESP.Elements) do esp.Filled.Transparency = 1 - value end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
                         notify("ESP", "Filled Transparency set to: " .. value)
