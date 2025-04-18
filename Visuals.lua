@@ -160,10 +160,16 @@ function Visuals.Init(UI, Core, notify)
 
         local logoFrame = Instance.new("Frame")
         logoFrame.Size = UDim2.new(0, 20, 0, 20)
-        logoFrame.Position = UDim2.new(0.5, -10, 0.5, -10)
+        logoFrame.Position = UDim2.new(0.5, -10, 0.5, -10) -- Центрирование внутри logoBackground
         logoFrame.BackgroundTransparency = 1
         logoFrame.Parent = logoBackground
         elements.LogoFrame = logoFrame
+
+        -- Убедимся, что logoBackground имеет достаточно места для центрирования
+        local logoConstraint = Instance.new("UISizeConstraint")
+        logoConstraint.MaxSize = Vector2.new(28, 28)
+        logoConstraint.MinSize = Vector2.new(28, 28)
+        logoConstraint.Parent = logoBackground
 
         elements.LogoSegments = {}
         local segmentCount = math.max(1, WatermarkConfig.segmentCount)
@@ -284,7 +290,7 @@ function Visuals.Init(UI, Core, notify)
                 elements.FPSLabel.Size = UDim2.new(0, fpsWidth, 0, 20)
                 local fpsContainerWidth = elements.FPSIcon.Size.X.Offset + fpsWidth + elements.FPSContainer:FindFirstChild("UIListLayout").Padding.Offset
                 elements.FPSContainer.Size = UDim2.new(0, fpsContainerWidth, 0, 20)
-                elements.FPSFrame.Size = UDim2.new(0, fpsContainerWidth + 30, 0, 20) -- Увеличил фон для FPS с запасом
+                elements.FPSFrame.Size = UDim2.new(0, fpsContainerWidth + 30, 0, 20)
             end
 
             if WatermarkConfig.showTime and elements.TimeContainer then
