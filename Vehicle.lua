@@ -5,8 +5,8 @@ local Vehicles = {
             Enabled = { Value = false, Default = false },
             SpeedBoostMultiplier = { Value = 1.65, Default = 1.65 },
             HoldSpeed = { Value = false, Default = false },
-            HoldKeybind = { Value = Enum.KeyCode.LeftShift, Default = Enum.KeyCode.LeftShift },
-            ToggleKey = { Value = Enum.KeyCode.F, Default = Enum.KeyCode.F }
+            HoldKeybind = { Value = nil, Default = nil },
+            ToggleKey = { Value = nil, Default = nil }
         },
         State = {
             IsBoosting = false,
@@ -19,7 +19,7 @@ local Vehicles = {
         Settings = {
             Enabled = { Value = false, Default = false },
             FlySpeed = { Value = 50, Default = 50 },
-            ToggleKey = { Value = Enum.KeyCode.G, Default = Enum.KeyCode.G }
+            ToggleKey = { Value = nil, Default = nil }
         },
         State = {
             IsFlying = false,
@@ -483,7 +483,7 @@ function Vehicles.Init(UI, Core, notify)
             Name = "Toggle Key",
             Default = VehicleFly.Settings.ToggleKey.Default,
             Callback = function(value)
-                VehicleFly.Settings.ToggleKey.Value = value
+                VehicleSpeed.Settings.ToggleKey.Value = value
                 if VehicleFly.Settings.Enabled.Value then
                     if VehicleFly.State.Connection then
                         VehicleFly.Stop()
@@ -493,7 +493,7 @@ function Vehicles.Init(UI, Core, notify)
                 else
                     notify("VehicleFly", "Enable Vehicle Fly to use keybind.", true)
                 end
-        end
+            end
         })
     end
 end
