@@ -294,12 +294,12 @@ function Vehicles.Init(UI, Core, notify)
         local right = Core.PlayerData.Camera.CFrame.RightVector
         local moveDir = Vector3.new(0, 0, 0)
 
-        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += look end
-        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir -= look end
-        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir -= right end
-        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += right end
-        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir += Vector3.new(0, 1, 0) end
-        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir -= Vector3.new(0, 1, 0) end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + look end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - look end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - right end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + right end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+        if Core.Services.UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir - Vector3.new(0, 1, 0) end
 
         VehicleFly.State.FlyBodyVelocity.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * VehicleFly.Settings.FlySpeed.Value or Vector3.new(0, 0, 0)
 
@@ -493,6 +493,7 @@ function Vehicles.Init(UI, Core, notify)
                 else
                     notify("VehicleFly", "Enable Vehicle Fly to use keybind.", true)
                 end
+        end
         })
     end
 end
