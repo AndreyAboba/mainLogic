@@ -848,8 +848,8 @@ function Combat.Init(UI, Core, notify)
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
     end)
 
-    if UI.Tabs then
-        local CombatTab = UI.Tabs:AddTab({ Name = "Combat" })
+    if UI.Tabs and UI.Tabs.Combat then
+        local CombatTab = UI.Tabs.Combat
         local KillAuraSection = CombatTab:AddSection({ Name = "KillAura" })
         local ThrowSilentSection = CombatTab:AddSection({ Name = "Throwable Silent" })
 
