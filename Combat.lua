@@ -1,51 +1,19 @@
--- Основные зависимости и сервисы
-local Core = {
-    Services = {
-        Players = game:GetService("Players"),
-        UserInputService = game:GetService("UserInputService"),
-        RunService = game:GetService("RunService"),
-        TweenService = game:GetService("TweenService"),
-        Workspace = game:GetService("Workspace"),
-        ReplicatedStorage = game:GetService("ReplicatedStorage"),
-        FriendsList = {},
-        CoreGuiService = game:GetService("CoreGui")
-    },
-    PlayerData = {},
-    Libraries = {
-        MacLib = nil
-    },
-    NotificationCooldown = { LastTime = 0, Delay = 5 }
-}
-
 -- Кэшируем часто используемые сервисы для уменьшения вызовов
-local Players = Core.Services.Players
-local Workspace = Core.Services.Workspace
-local TweenService = Core.Services.TweenService
-local RunService = Core.Services.RunService
-local ReplicatedStorage = Core.Services.ReplicatedStorage
-
--- Инициализация Core.PlayerData раньше, чем использование
-Core.PlayerData.LocalPlayer = Players.LocalPlayer
-Core.PlayerData.Camera = Workspace.CurrentCamera
+local Players
+local Workspace
+local TweenService
+local RunService
+local ReplicatedStorage
 
 -- Оптимизация: кэшируем игрока и его персонажа
-local LocalPlayer = Core.PlayerData.LocalPlayer
+local LocalPlayer
 local LocalCharacter = nil
-
--- Проверяем, что LocalPlayer существует, прежде чем подписываться на события
-if LocalPlayer then
-    LocalPlayer.CharacterAdded:Connect(function(character)
-        LocalCharacter = character
-    end)
-    if LocalPlayer.Character then
-        LocalCharacter = LocalPlayer.Character
-    end
-else
-    warn("LocalPlayer is nil, cannot set up CharacterAdded connection")
-end
 
 -- Переменные для UI и уведомлений
 local UI, Core, notify
+
+-- Переменная для отладки
+local debugMode = true -- Включи отладку для проверки FriendsList
 
 -- KillAura и ThrowSilent
 local KillAura = {
@@ -79,7 +47,8 @@ local KillAura = {
         PredictBeam2 = nil,
         LastTool = nil,
         CurrentTargetIndex = 1,
-        LastSwitchTime = 0
+        LastSwitchTime = 0,
+        LastFriendsList = nil -- Добавляем для отслеживания изменений FriendsList
     }
 }
 
@@ -102,7 +71,9 @@ local ThrowSilent = {
         LastThrowTime = 0,
         V_U_4 = nil,
         Connection = nil,
-        OldFireServer = nil
+        OldFireServer = nil,
+        LastTarget = nil,
+        LastFriendsList = nil
     },
     Constants = {
         DEFAULT_THROW_RADIUS = 20,
@@ -184,10 +155,18 @@ local function getNearestPlayers(attackRadius)
     -- Оптимизация: кэшируем список игроков и фильтруем друзей заранее
     local allPlayers = Players:GetPlayers()
     local friendsList = Core.Services.FriendsList or {}
+    
+    -- Отладка: выводим содержимое FriendsList
+    if debugMode then
+        print("[KillAura Debug] FriendsList:", friendsList)
+    end
+    
     local validPlayers = {}
     for _, player in pairs(allPlayers) do
         if player ~= LocalPlayer and (not friendsList[player.Name]) then
             table.insert(validPlayers, player)
+        elseif debugMode and player ~= LocalPlayer and friendsList[player.Name] then
+            print("[KillAura Debug] Skipping player (in FriendsList):", player.Name)
         end
     end
 
@@ -235,6 +214,12 @@ local function getNearestPlayers(attackRadius)
         end
     end
     
+    -- Отладка: выводим выбранных игроков
+    if debugMode then
+        print("[KillAura Debug] Selected nearestPlayer1:", nearestPlayer1 and nearestPlayer1.Name or "None")
+        print("[KillAura Debug] Selected nearestPlayer2:", nearestPlayer2 and nearestPlayer2.Name or "None")
+    end
+    
     return nearestPlayer1, nearestPlayer2
 end
 
@@ -242,7 +227,12 @@ local function lookAtTarget(target, isSnap, isMultiSnapSecondTarget)
     if not KillAura.Settings.LookAtTarget.Value or not target then return end
 
     local friendsList = Core.Services.FriendsList or {}
-    if target.Name and friendsList[target.Name] then return end
+    if target.Name and friendsList[target.Name] then
+        if debugMode then
+            print("[KillAura Debug] lookAtTarget: Skipping player (in FriendsList):", target.Name)
+        end
+        return
+    end
 
     local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
@@ -416,16 +406,35 @@ end
 
 local lastTargetUpdate = 0
 local targetUpdateInterval = 0.5
-local cachedTarget = nil
 
 local function getNearestPlayer(throwRadius)
     local currentTime = tick()
-    if currentTime - lastTargetUpdate < targetUpdateInterval and cachedTarget and cachedTarget.Character and cachedTarget.Character.Humanoid and cachedTarget.Character.Humanoid.Health > 0 then
-        local friendsList = Core.Services.FriendsList or {}
-        if cachedTarget.Name and friendsList[cachedTarget.Name] then
+    local friendsList = Core.Services.FriendsList or {}
+    
+    -- Отладка: выводим содержимое FriendsList
+    if debugMode then
+        print("[ThrowSilent Debug] FriendsList:", friendsList)
+    end
+    
+    -- Проверяем, изменился ли FriendsList, и сбрасываем LastTarget, если изменился
+    if KillAura.State.LastFriendsList ~= friendsList then
+        if debugMode then
+            print("[ThrowSilent Debug] FriendsList changed, resetting LastTarget")
+        end
+        ThrowSilent.State.LastTarget = nil
+        ThrowSilent.State.LastFriendsList = friendsList
+    end
+
+    if currentTime - lastTargetUpdate < targetUpdateInterval and ThrowSilent.State.LastTarget and ThrowSilent.State.LastTarget.Character and ThrowSilent.State.LastTarget.Character.Humanoid and ThrowSilent.State.LastTarget.Character.Humanoid.Health > 0 then
+        -- Проверяем, не добавили ли цель в FriendsList
+        if ThrowSilent.State.LastTarget.Name and friendsList[ThrowSilent.State.LastTarget.Name] then
+            if debugMode then
+                print("[ThrowSilent Debug] LastTarget now in FriendsList, resetting:", ThrowSilent.State.LastTarget.Name)
+            end
+            ThrowSilent.State.LastTarget = nil
             return nil
         end
-        return cachedTarget
+        return ThrowSilent.State.LastTarget
     end
     lastTargetUpdate = currentTime
 
@@ -437,7 +446,6 @@ local function getNearestPlayer(throwRadius)
     local nearestPlayer = nil
     local shortestDistance = throwRadius
     
-    local friendsList = Core.Services.FriendsList or {}
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and (not friendsList[player.Name]) then
             local targetChar = player.Character
@@ -450,10 +458,19 @@ local function getNearestPlayer(throwRadius)
                     nearestPlayer = player
                 end
             end
+        elseif debugMode and player ~= LocalPlayer and friendsList[player.Name] then
+            print("[ThrowSilent Debug] Skipping player (in FriendsList):", player.Name)
         end
     end
     
-    cachedTarget = nearestPlayer
+    ThrowSilent.State.LastTarget = nearestPlayer
+    ThrowSilent.State.LastFriendsList = friendsList
+    
+    -- Отладка: выводим выбранную цель
+    if debugMode then
+        print("[ThrowSilent Debug] Selected nearestPlayer:", nearestPlayer and nearestPlayer.Name or "None")
+    end
+    
     return nearestPlayer
 end
 
@@ -461,7 +478,12 @@ local function lookAtTargetThrowSilent(target)
     if not ThrowSilent.Settings.LookAtTarget.Value or not target or not target.Name then return end
 
     local friendsList = Core.Services.FriendsList or {}
-    if friendsList[target.Name] then return end
+    if friendsList[target.Name] then
+        if debugMode then
+            print("[ThrowSilent Debug] lookAtTargetThrowSilent: Skipping player (in FriendsList):", target.Name)
+        end
+        return
+    end
     
     local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
@@ -585,19 +607,16 @@ local function checkToolChangeThrowSilent()
     end
 end
 
-local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-if not Remotes then
-    warn("Remotes not found in ReplicatedStorage")
-end
-
-local SendRemote = Remotes and Remotes:FindFirstChild("Send")
-if not SendRemote then
-    warn("Send not found in ReplicatedStorage.Remotes")
-end
-
 local function initializeThrowSilent()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then
+        warn("Remotes not found in ReplicatedStorage")
+        return
+    end
+
+    local SendRemote = Remotes:FindFirstChild("Send")
     if not SendRemote then
-        warn("SendRemote is nil, cannot initialize ThrowSilent")
+        warn("Send not found in ReplicatedStorage.Remotes")
         return
     end
 
@@ -624,6 +643,15 @@ local function initializeThrowSilent()
                     local throwRadius = getThrowRadius(equippedTool)
                     local nearestPlayer = getNearestPlayer(throwRadius)
                     if nearestPlayer then
+                        -- Дополнительная проверка перед броском
+                        local friendsList = Core.Services.FriendsList or {}
+                        if nearestPlayer.Name and friendsList[nearestPlayer.Name] then
+                            if debugMode then
+                                print("[ThrowSilent Debug] FireServer: Skipping player (in FriendsList):", nearestPlayer.Name)
+                            end
+                            return ThrowSilent.State.OldFireServer(self, ...)
+                        end
+
                         lookAtTargetThrowSilent(nearestPlayer)
                         local throwSpeed = getThrowSpeed(equippedTool)
                         local prediction = predictTargetPositionAndRotation(nearestPlayer, throwSpeed)
@@ -662,6 +690,17 @@ local function initializeThrowSilent()
                 local throwRadius = getThrowRadius(equippedTool)
                 local nearestPlayer = getNearestPlayer(throwRadius)
                 if nearestPlayer then
+                    -- Дополнительная проверка перед любыми действиями
+                    local friendsList = Core.Services.FriendsList or {}
+                    if nearestPlayer.Name and friendsList[nearestPlayer.Name] then
+                        if debugMode then
+                            print("[ThrowSilent Debug] Heartbeat: Skipping player (in FriendsList):", nearestPlayer.Name)
+                        end
+                        if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
+                        if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
+                        return
+                    end
+
                     lookAtTargetThrowSilent(nearestPlayer)
                     local throwSpeed = getThrowSpeed(equippedTool)
                     local prediction = predictTargetPositionAndRotation(nearestPlayer, throwSpeed)
@@ -687,8 +726,20 @@ local function initializeThrowSilent()
     end)
 end
 
-local oldFireServer
-if SendRemote then
+local function hookFireServer()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then
+        warn("Remotes not found in ReplicatedStorage")
+        return
+    end
+
+    local SendRemote = Remotes:FindFirstChild("Send")
+    if not SendRemote then
+        warn("Send not found in ReplicatedStorage.Remotes")
+        return
+    end
+
+    local oldFireServer
     oldFireServer = hookfunction(SendRemote.FireServer, function(self, ...)
         local args = {...}
         if #args >= 2 and args[2] == "melee_attack" then
@@ -697,6 +748,21 @@ if SendRemote then
                 local attackRadius = getAttackRadius(equippedTool)
                 local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
                 if nearestPlayer1 then
+                    -- Дополнительная проверка перед атакой
+                    local friendsList = Core.Services.FriendsList or {}
+                    if nearestPlayer1.Name and friendsList[nearestPlayer1.Name] then
+                        if debugMode then
+                            print("[KillAura Debug] FireServer: Skipping player (in FriendsList):", nearestPlayer1.Name)
+                        end
+                        return oldFireServer(self, ...)
+                    end
+                    if nearestPlayer2 and nearestPlayer2.Name and friendsList[nearestPlayer2.Name] then
+                        if debugMode then
+                            print("[KillAura Debug] FireServer: Skipping player2 (in FriendsList):", nearestPlayer2.Name)
+                        end
+                        nearestPlayer2 = nil
+                    end
+
                     if KillAura.Settings.SendMethod.Value == "Single" then
                         args[3] = equippedTool
                         args[4] = {nearestPlayer1}
@@ -726,8 +792,6 @@ if SendRemote then
         end
         return oldFireServer(self, unpack(args))
     end)
-else
-    warn("SendRemote is nil, cannot hook FireServer")
 end
 
 local lastKillAuraToolCheckTime = 0
@@ -1062,6 +1126,26 @@ local function Init(ui, core, notificationFunc)
     Core = core
     notify = notificationFunc
 
+    -- Инициализация сервисов из переданного Core
+    Players = Core.Services.Players
+    Workspace = Core.Services.Workspace
+    TweenService = Core.Services.TweenService
+    RunService = Core.Services.RunService
+    ReplicatedStorage = Core.Services.ReplicatedStorage
+
+    -- Инициализация LocalPlayer
+    LocalPlayer = Core.PlayerData.LocalPlayer
+    if LocalPlayer then
+        LocalPlayer.CharacterAdded:Connect(function(character)
+            LocalCharacter = character
+        end)
+        if LocalPlayer.Character then
+            LocalCharacter = LocalPlayer.Character
+        end
+    else
+        warn("LocalPlayer is nil, cannot set up CharacterAdded connection")
+    end
+
     if UI and UI.Tabs and UI.Tabs.Combat then
         UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
         UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
@@ -1073,6 +1157,7 @@ local function Init(ui, core, notificationFunc)
     setupUI()
     initializeTargetStrafe()
     initializeThrowSilent()
+    hookFireServer()
 
     local connection
     connection = RunService.RenderStepped:Connect(function()
@@ -1095,46 +1180,81 @@ local function Init(ui, core, notificationFunc)
                 local attackRadius = getAttackRadius(equippedTool)
                 local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
                 
+                -- Проверяем, изменился ли FriendsList, и сбрасываем LastTarget, если изменился
+                local friendsList = Core.Services.FriendsList or {}
+                if KillAura.State.LastFriendsList ~= friendsList then
+                    if debugMode then
+                        print("[KillAura Debug] FriendsList changed, resetting LastTarget")
+                    end
+                    KillAura.State.LastTarget = nil
+                    KillAura.State.LastFriendsList = friendsList
+                end
+                
                 if nearestPlayer1 then
-                    predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
-                    if nearestPlayer2 then
-                        predictTargetPosition(nearestPlayer2, "PredictVisualPart2", "PredictBeam2")
+                    -- Дополнительная проверка перед любыми действиями
+                    if nearestPlayer1.Name and friendsList[nearestPlayer1.Name] then
+                        if debugMode then
+                            print("[KillAura Debug] RenderStepped: Skipping nearestPlayer1 (in FriendsList):", nearestPlayer1.Name)
+                        end
+                        nearestPlayer1 = nil
+                        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+                        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
+                    end
+                    if nearestPlayer2 and nearestPlayer2.Name and friendsList[nearestPlayer2.Name] then
+                        if debugMode then
+                            print("[KillAura Debug] RenderStepped: Skipping nearestPlayer2 (in FriendsList):", nearestPlayer2.Name)
+                        end
+                        nearestPlayer2 = nil
+                        if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+                        if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+                    end
+
+                    if nearestPlayer1 then
+                        predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
+                        if nearestPlayer2 then
+                            predictTargetPosition(nearestPlayer2, "PredictVisualPart2", "PredictBeam2")
+                        else
+                            if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+                            if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+                        end
+                        
+                        if KillAura.Settings.LookAtTarget.Value then
+                            if KillAura.Settings.LookAtMethod.Value == "AlwaysAim" then
+                                lookAtTarget(nearestPlayer1, false)
+                            elseif KillAura.Settings.LookAtMethod.Value == "MultiAim" then
+                                local targets = {}
+                                if nearestPlayer1 then table.insert(targets, nearestPlayer1) end
+                                if nearestPlayer2 then table.insert(targets, nearestPlayer2) end
+                                
+                                if #targets > 0 then
+                                    if currentTime - KillAura.State.LastSwitchTime >= 0.1 then
+                                        KillAura.State.CurrentTargetIndex = KillAura.State.CurrentTargetIndex + 1
+                                        if KillAura.State.CurrentTargetIndex > #targets then
+                                            KillAura.State.CurrentTargetIndex = 1
+                                        end
+                                        KillAura.State.LastSwitchTime = currentTime
+                                    end
+                                    lookAtTarget(targets[KillAura.State.CurrentTargetIndex], false)
+                                end
+                            elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
+                                lookAtTarget(nearestPlayer1, false)
+                            end
+                        end
                     else
+                        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+                        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
                         if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
                         if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
                     end
                     
-                    if KillAura.Settings.LookAtTarget.Value then
-                        if KillAura.Settings.LookAtMethod.Value == "AlwaysAim" then
-                            lookAtTarget(nearestPlayer1, false)
-                        elseif KillAura.Settings.LookAtMethod.Value == "MultiAim" then
-                            local targets = {}
-                            if nearestPlayer1 then table.insert(targets, nearestPlayer1) end
-                            if nearestPlayer2 then table.insert(targets, nearestPlayer2) end
-                            
-                            if #targets > 0 then
-                                if currentTime - KillAura.State.LastSwitchTime >= 0.1 then
-                                    KillAura.State.CurrentTargetIndex = KillAura.State.CurrentTargetIndex + 1
-                                    if KillAura.State.CurrentTargetIndex > #targets then
-                                        KillAura.State.CurrentTargetIndex = 1
-                                    end
-                                    KillAura.State.LastSwitchTime = currentTime
-                                end
-                                lookAtTarget(targets[KillAura.State.CurrentTargetIndex], false)
-                            end
-                        elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
-                            lookAtTarget(nearestPlayer1, false)
-                        end
+                    if nearestPlayer1 and currentTime - KillAura.State.LastAttackTime >= KillAura.Settings.AttackDelay.Value then
+                        KillAura.State.LastAttackTime = currentTime
                     end
                 else
                     if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
                     if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
                     if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
                     if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-                end
-                
-                if nearestPlayer1 and currentTime - KillAura.State.LastAttackTime >= KillAura.Settings.AttackDelay.Value then
-                    KillAura.State.LastAttackTime = currentTime
                 end
             else
                 if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
@@ -1152,6 +1272,7 @@ local function Init(ui, core, notificationFunc)
             KillAura.State.StrafeAngle = 0
             KillAura.State.StrafeVector = nil
             KillAura.State.LastTarget = nil
+            KillAura.State.LastFriendsList = nil
             KillAura.State.LastTool = nil
             KillAura.State.CurrentTargetIndex = 1
             KillAura.State.LastSwitchTime = 0
@@ -1160,6 +1281,8 @@ local function Init(ui, core, notificationFunc)
             if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
             if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
             ThrowSilent.State.LastTool = nil
+            ThrowSilent.State.LastTarget = nil
+            ThrowSilent.State.LastFriendsList = nil
             if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
             if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
         end)
