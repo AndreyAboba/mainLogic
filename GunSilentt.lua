@@ -4,7 +4,7 @@ local GunSilent = {
         RangePlus = { Value = 50, Default = 50 },
         Rage = { Value = false, Default = false },
         HitPart = { Value = "Head", Default = "Head" },
-        PredictBullet = { Value = 2500, Default = {Bi}2500 },
+        PredictBullet = { Value = 2500, Default = 2500 },
         YCorrection = { Value = 0.01, Default = 0.01 },
         FakeDistance = { Value = 3, Default = 3 },
         WallSupport = { Value = true, Default = true },
