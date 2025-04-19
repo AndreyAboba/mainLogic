@@ -761,7 +761,7 @@ end
 
 -- Основной цикл
 local connection
-connection = Core.Services.RunService.RenderStepped:Connect(function()
+connection = game:GetService("RunService").RenderStepped:Connect(function()
     if not KillAura.Settings.Enabled.Value then
         if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
         if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
