@@ -24,22 +24,28 @@ local TweenService = Core.Services.TweenService
 local RunService = Core.Services.RunService
 local ReplicatedStorage = Core.Services.ReplicatedStorage
 
--- Инициализация Core.PlayerData
+-- Инициализация Core.PlayerData раньше, чем использование
 Core.PlayerData.LocalPlayer = Players.LocalPlayer
 Core.PlayerData.Camera = Workspace.CurrentCamera
-
--- Переменные для UI и уведомлений
-local UI, Core, notify
 
 -- Оптимизация: кэшируем игрока и его персонажа
 local LocalPlayer = Core.PlayerData.LocalPlayer
 local LocalCharacter = nil
-LocalPlayer.CharacterAdded:Connect(function(character)
-    LocalCharacter = character
-end)
-if LocalPlayer.Character then
-    LocalCharacter = LocalPlayer.Character
+
+-- Проверяем, что LocalPlayer существует, прежде чем подписываться на события
+if LocalPlayer then
+    LocalPlayer.CharacterAdded:Connect(function(character)
+        LocalCharacter = character
+    end)
+    if LocalPlayer.Character then
+        LocalCharacter = LocalPlayer.Character
+    end
+else
+    warn("LocalPlayer is nil, cannot set up CharacterAdded connection")
 end
+
+-- Переменные для UI и уведомлений
+local UI, Core, notify
 
 -- KillAura и ThrowSilent
 local KillAura = {
@@ -370,7 +376,7 @@ local function initializeTargetStrafe()
                     KillAura.State.StrafeAngle = KillAura.State.StrafeAngle + factor % 360
                     moveVector = ((newPos - localPosition) * Vector3.new(1, 0, 1)).Unit
                     if moveVector ~= moveVector then moveVector = Vector3.new(0, 0, 0) end
-                    KillAura.State.StrafeVector = moveVector
+                    KillAura.State.SregulatedStrafeVector = moveVector
                 else
                     nearestPlayer1 = nil
                 end
@@ -526,7 +532,7 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
         ThrowSilent.State.RotationVisualPart.CFrame = CFrame.lookAt(startPos, endPos)
         ThrowSilent.State.RotationVisualPart.Position = startPos + (adjustedDirection * 2.5)
     else
-        if ThrowSilent.State.byVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
+        if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
     end
     
@@ -1132,23 +1138,25 @@ local function Init(ui, core, notificationFunc)
         end
     end)
 
-    LocalPlayer.CharacterAdded:Connect(function(character)
-        character:WaitForChild("HumanoidRootPart")
-        LocalCharacter = character
-        KillAura.State.StrafeAngle = 0
-        KillAura.State.StrafeVector = nil
-        KillAura.State.LastTarget = nil
-        KillAura.State.LastTool = nil
-        KillAura.State.CurrentTargetIndex = 1
-        KillAura.State.LastSwitchTime = 0
-        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
-        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
-        if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
-        if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-        ThrowSilent.State.LastTool = nil
-        if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
-        if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-    end)
+    if LocalPlayer then
+        LocalPlayer.CharacterAdded:Connect(function(character)
+            character:WaitForChild("HumanoidRootPart")
+            LocalCharacter = character
+            KillAura.State.StrafeAngle = 0
+            KillAura.State.StrafeVector = nil
+            KillAura.State.LastTarget = nil
+            KillAura.State.LastTool = nil
+            KillAura.State.CurrentTargetIndex = 1
+            KillAura.State.LastSwitchTime = 0
+            if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+            if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
+            if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+            if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+            ThrowSilent.State.LastTool = nil
+            if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
+            if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
+        end)
+    end
 end
 
 return {
