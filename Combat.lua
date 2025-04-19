@@ -590,9 +590,7 @@ local function checkToolChangeThrowSilent()
             local baseRange = currentTool:GetAttribute("Range") or ThrowSilent.Constants.DEFAULT_THROW_RADIUS
             local throwSpeed = currentTool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
             if UI and UI.Window and UI.Window.Notify then
-                UI.Window:Notify({ Title = "Throwable Silent", Description = "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. radius–
-
-, ", Throw Speed: " .. throwSpeed .. ")", true })
+                UI.Window:Notify({ Title = "Throwable Silent", Description = "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. radius .. ", Throw Speed: " .. throwSpeed .. ")", true })
             end
         elseif ThrowSilent.State.LastTool and not currentTool then
             if UI and UI.Window and UI.Window.Notify then
