@@ -1,4 +1,5 @@
-Core = {
+-- Основные зависимости и сервисы
+local Core = {
     Services = {
         Players = game:GetService("Players"),
         UserInputService = game:GetService("UserInputService"),
@@ -15,11 +16,15 @@ Core = {
     },
     NotificationCooldown = { LastTime = 0, Delay = 5 }
 }
-print('1')
 
+-- Инициализация Core.PlayerData
 Core.PlayerData.LocalPlayer = Core.Services.Players.LocalPlayer
 Core.PlayerData.Camera = Core.Services.Workspace.CurrentCamera
-local UI, notify
+
+-- Переменные для UI и уведомлений
+local UI, Core, notify
+
+-- KillAura и ThrowSilent
 local KillAura = {
     Settings = {
         Enabled = { Value = false, Default = false },
@@ -50,10 +55,11 @@ local KillAura = {
         PredictBeam1 = nil,
         PredictBeam2 = nil,
         LastTool = nil,
-        CurrentTargetIndex = 1, -- Для MultiAim
-        LastSwitchTime = 0 -- Для отслеживания времени переключения в MultiAim
+        CurrentTargetIndex = 1,
+        LastSwitchTime = 0
     }
 }
+
 local ThrowSilent = {
     Settings = {
         Enabled = { Value = false, Default = false },
@@ -379,7 +385,7 @@ local function initializeTargetStrafe()
         KillAura.State.StrafeVector = nil
     end
 end
--- Throwable silent aim
+
 -- Функции ThrowSilent
 local function getEquippedToolThrowSilent()
     local character = Core.Services.Workspace:FindFirstChild(Core.PlayerData.LocalPlayer.Name)
@@ -553,11 +559,11 @@ local function checkToolChangeThrowSilent()
             local radius = getThrowRadius(currentTool)
             local baseRange = currentTool:GetAttribute("Range") or ThrowSilent.Constants.DEFAULT_THROW_RADIUS
             local throwSpeed = currentTool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "Throwable Silent", Description = "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. radius .. ", Throw Speed: " .. throwSpeed .. ")", true })
             end
         elseif ThrowSilent.State.LastTool and not currentTool then
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "Throwable Silent", Description = "Unequipped: " .. ThrowSilent.State.LastTool.Name, true })
             end
             if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
@@ -569,27 +575,31 @@ local function checkToolChangeThrowSilent()
             local newRadius = newBaseRange + ThrowSilent.Settings.RangePlus.Value
             local oldThrowSpeed = ThrowSilent.State.LastTool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
             local newThrowSpeed = currentTool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "Throwable Silent", Description = "Switched from " .. ThrowSilent.State.LastTool.Name .. " (Range: " .. oldRadius .. ", Speed: " .. oldThrowSpeed .. ") to " .. currentTool.Name .. " (Range: " .. newRadius .. ", Speed: " .. newThrowSpeed .. ")", true })
             end
         end
         ThrowSilent.State.LastTool = currentTool
     end
 end
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not Remotes then
     warn("Remotes not found in ReplicatedStorage")
-    return
 end
 
-local SendRemote = Remotes:FindFirstChild("Send")
+local SendRemote = Remotes and Remotes:FindFirstChild("Send")
 if not SendRemote then
     warn("Send not found in ReplicatedStorage.Remotes")
-    return
 end
 
 local function initializeThrowSilent()
+    if not SendRemote then
+        warn("SendRemote is nil, cannot initialize ThrowSilent")
+        return
+    end
+
     -- Поиск v_u_4
     for _, obj in pairs(getgc(true)) do
         if type(obj) == "table" and not getmetatable(obj) then
@@ -606,31 +616,27 @@ local function initializeThrowSilent()
 
     -- Перехват FireServer для обычного режима
     if not ThrowSilent.State.OldFireServer then
-        if SendRemote then
-            ThrowSilent.State.OldFireServer = hookfunction(SendRemote.FireServer, function(self, ...)
-                local args = {...}
-                if ThrowSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" then
-                    ThrowSilent.State.LastEventId = args[1]
-                    
-                    local equippedTool = getEquippedToolThrowSilent()
-                    if equippedTool and args[2] == "throw_item" then
-                        local throwRadius = getThrowRadius(equippedTool)
-                        local nearestPlayer = getNearestPlayer(throwRadius)
-                        if nearestPlayer then
-                            lookAtTargetThrowSilent(nearestPlayer)
-                            local throwSpeed = getThrowSpeed(equippedTool)
-                            local prediction = predictTargetPositionAndRotation(nearestPlayer, throwSpeed)
-                            args[3] = equippedTool
-                            args[4] = prediction.position
-                            args[5] = prediction.direction
-                        end
+        ThrowSilent.State.OldFireServer = hookfunction(SendRemote.FireServer, function(self, ...)
+            local args = {...}
+            if ThrowSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" then
+                ThrowSilent.State.LastEventId = args[1]
+                
+                local equippedTool = getEquippedToolThrowSilent()
+                if equippedTool and args[2] == "throw_item" then
+                    local throwRadius = getThrowRadius(equippedTool)
+                    local nearestPlayer = getNearestPlayer(throwRadius)
+                    if nearestPlayer then
+                        lookAtTargetThrowSilent(nearestPlayer)
+                        local throwSpeed = getThrowSpeed(equippedTool)
+                        local prediction = predictTargetPositionAndRotation(nearestPlayer, throwSpeed)
+                        args[3] = equippedTool
+                        args[4] = prediction.position
+                        args[5] = prediction.direction
                     end
                 end
-                return ThrowSilent.State.OldFireServer(self, unpack(args))
-            end)
-        else
-            warn("Cannot hook is nil")
-        end
+            end
+            return ThrowSilent.State.OldFireServer(self, unpack(args))
+        end)
     end
 
     -- Основной цикл для RAGE режима
@@ -673,12 +679,8 @@ local function initializeThrowSilent()
                             prediction.position,
                             prediction.direction
                         }
-                        if SendRemote then
-                            SendRemote:FireServer(unpack(args))
-                            ThrowSilent.State.LastThrowTime = currentTime
-                        else
-                            warn("Cannot fire is nil")
-                        end
+                        SendRemote:FireServer(unpack(args))
+                        ThrowSilent.State.LastThrowTime = currentTime
                     end
                 else
                     if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
@@ -689,46 +691,49 @@ local function initializeThrowSilent()
     end)
 end
 
-
-oldFireServer = hookfunction(SendRemote.FireServer, function(self, ...)
-    local args = {...}
-    if #args >= 2 and args[2] == "melee_attack" then
-        local equippedTool = getEquippedTool()
-        if equippedTool and isMeleeWeapon(equippedTool) then
-            local attackRadius = getAttackRadius(equippedTool)
-            local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
-            if nearestPlayer1 then
-                if KillAura.Settings.SendMethod.Value == "Single" then
-                    args[3] = equippedTool
-                    args[4] = {nearestPlayer1}
-                    args[5] = predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
-                    local result = oldFireServer(self, unpack(args))
-                    if KillAura.Settings.LookAtTarget.Value and KillAura.Settings.LookAtMethod.Value == "Snap" then
-                        lookAtTarget(nearestPlayer1, true)
-                    end
-                    return result
-                elseif KillAura.Settings.SendMethod.Value == "Multi" then
-                    local targets = {nearestPlayer1}
-                    if nearestPlayer2 then
-                        table.insert(targets, nearestPlayer2)
-                        if KillAura.Settings.LookAtTarget.Value and KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
-                            lookAtTarget(nearestPlayer1, false)
-                            lookAtTarget(nearestPlayer2, true, true) -- Наводимся на второго игрока до отправки remote
+local oldFireServer
+if SendRemote then
+    oldFireServer = hookfunction(SendRemote.FireServer, function(self, ...)
+        local args = {...}
+        if #args >= 2 and args[2] == "melee_attack" then
+            local equippedTool = getEquippedTool()
+            if equippedTool and isMeleeWeapon(equippedTool) then
+                local attackRadius = getAttackRadius(equippedTool)
+                local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
+                if nearestPlayer1 then
+                    if KillAura.Settings.SendMethod.Value == "Single" then
+                        args[3] = equippedTool
+                        args[4] = {nearestPlayer1}
+                        args[5] = predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
+                        local result = oldFireServer(self, unpack(args))
+                        if KillAura.Settings.LookAtTarget.Value and KillAura.Settings.LookAtMethod.Value == "Snap" then
+                            lookAtTarget(nearestPlayer1, true)
                         end
+                        return result
+                    elseif KillAura.Settings.SendMethod.Value == "Multi" then
+                        local targets = {nearestPlayer1}
+                        if nearestPlayer2 then
+                            table.insert(targets, nearestPlayer2)
+                            if KillAura.Settings.LookAtTarget.Value and KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
+                                lookAtTarget(nearestPlayer1, false)
+                                lookAtTarget(nearestPlayer2, true, true)
+                            end
+                        end
+                        args[3] = equippedTool
+                        args[4] = targets
+                        args[5] = predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
+                        local result = oldFireServer(self, unpack(args))
+                        return result
                     end
-                    args[3] = equippedTool
-                    args[4] = targets
-                    args[5] = predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
-                    local result = oldFireServer(self, unpack(args))
-                    return result
                 end
             end
         end
-    end
-    return oldFireServer(self, unpack(args))
-end)
+        return oldFireServer(self, unpack(args))
+    end)
+else
+    warn("SendRemote is nil, cannot hook FireServer")
+end
 
--- Проверка смены инструмента и уведомления
 local function checkToolChange()
     local currentTool = getEquippedTool()
     if currentTool ~= KillAura.State.LastTool then
@@ -736,15 +741,15 @@ local function checkToolChange()
             if isMeleeWeapon(currentTool) then
                 local radius = getAttackRadius(currentTool)
                 local baseRange = currentTool:GetAttribute("Range") or KillAura.Settings.DefaultAttackRadius.Value
-                if UI.Window and UI.Window.Notify then
+                if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. radius .. ")", true })
                 else
                     warn("Notification failed: UI.Window or Notify is nil")
                 end
-                KillAura.State.LastTool = currentTool -- Сохраняем только если это melee или fists
+                KillAura.State.LastTool = currentTool
             end
         elseif KillAura.State.LastTool and not currentTool then
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "KillAura", Description = "Unequipped: " .. KillAura.State.LastTool.Name, true })
             else
                 warn("Notification failed: UI.Window or Notify is nil")
@@ -753,20 +758,19 @@ local function checkToolChange()
             if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
             if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
             if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-            KillAura.State.LastTool = nil -- Сбрасываем, так как инструмент снят
+            KillAura.State.LastTool = nil
         elseif currentTool and KillAura.State.LastTool then
             if isMeleeWeapon(currentTool) then
                 local oldRadius = getAttackRadius(KillAura.State.LastTool)
                 local newRadius = getAttackRadius(currentTool)
-                if UI.Window and UI.Window.Notify then
+                if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Switched from " .. KillAura.State.LastTool.Name .. " (Range: " .. oldRadius .. ") to " .. currentTool.Name .. " (Range: " .. newRadius .. ")", true })
                 else
                     warn("Notification failed: UI.Window or Notify is nil")
                 end
-                KillAura.State.LastTool = currentTool -- Сохраняем новый инструмент, так как он melee
+                KillAura.State.LastTool = currentTool
             else
-                -- Если новый инструмент не melee, сбрасываем LastTool и уведомляем о снятии предыдущего
-                if UI.Window and UI.Window.Notify then
+                if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Unequipped: " .. KillAura.State.LastTool.Name, true })
                 else
                     warn("Notification failed: UI.Window or Notify is nil")
@@ -775,67 +779,373 @@ local function checkToolChange()
                 if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
                 if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
                 if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-                KillAura.State.LastTool = nil -- Сбрасываем, так как новый инструмент не melee
+                KillAura.State.LastTool = nil
             end
         end
     end
 end
 
--- Основной цикл
-local connection
-connection = Core.Services.RunService.RenderStepped:Connect(function()
-    if not KillAura.Settings.Enabled.Value then
-        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
-        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
-        if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
-        if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-        checkToolChange()
-        checkToolChangeThrowSilent()
+-- Настройка UI
+local function setupUI()
+    if not UI or not UI.Sections then return end
+
+    -- Настройка KillAura
+    if UI.Sections.KillAura then
+        UI.Sections.KillAura:Header({ Name = "KillAura" })
+        UI.Sections.KillAura:Toggle({
+            Name = "Enabled",
+            Default = KillAura.Settings.Enabled.Default,
+            Callback = function(value)
+                KillAura.Settings.Enabled.Value = value
+                if notify then
+                    notify("KillAura", "KillAura " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Dropdown({
+            Name = "Send Method",
+            Default = KillAura.Settings.SendMethod.Default,
+            Options = {"Single", "Multi"},
+            Callback = function(value)
+                KillAura.Settings.SendMethod.Value = value
+                if notify then
+                    notify("KillAura", "Send Method set to: " .. value, true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Slider({
+            Name = "Multi FOV",
+            Default = KillAura.Settings.MultiFOV.Default,
+            Minimum = 0,
+            Maximum = 3080,
+            DisplayMethod = "Value",
+            Precision = 0,
+            Callback = function(value)
+                KillAura.Settings.MultiFOV.Value = value
+                if notify then
+                    notify("KillAura", "Multi FOV set to: " .. value .. " degrees")
+                end
+            end
+        })
+        UI.Sections.KillAura:Toggle({
+            Name = "Visible Check",
+            Default = KillAura.Settings.VisibleCheck.Default,
+            Callback = function(value)
+                KillAura.Settings.VisibleCheck.Value = value
+                if notify then
+                    notify("KillAura", "Visible Check " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Toggle({
+            Name = "Look At Target",
+            Default = KillAura.Settings.LookAtTarget.Default,
+            Callback = function(value)
+                KillAura.Settings.LookAtTarget.Value = value
+                if notify then
+                    notify("KillAura", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Dropdown({
+            Name = "Look At Method",
+            Default = KillAura.Settings.LookAtMethod.Default,
+            Options = {"Snap", "AlwaysAim", "MultiAim", "MultiSnapAim"},
+            Callback = function(value)
+                KillAura.Settings.LookAtMethod.Value = value
+                if notify then
+                    notify("KillAura", "Look At Method set to: " .. value, true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Toggle({
+            Name = "Predict",
+            Default = KillAura.Settings.Predict.Default,
+            Callback = function(value)
+                KillAura.Settings.Predict.Value = value
+                if notify then
+                    notify("KillAura", "Predict " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Toggle({
+            Name = "Predict Visualisation",
+            Default = KillAura.Settings.PredictVisualisation.Default,
+            Callback = function(value)
+                KillAura.Settings.PredictVisualisation.Value = value
+                if notify then
+                    notify("KillAura", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Toggle({
+            Name = "Target Strafe",
+            Default = KillAura.Settings.TargetStrafe.Default,
+            Callback = function(value)
+                KillAura.Settings.TargetStrafe.Value = value
+                initializeTargetStrafe()
+                if notify then
+                    notify("KillAura", "Target Strafe " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.KillAura:Slider({
+            Name = "Attack Delay",
+            Default = KillAura.Settings.AttackDelay.Default,
+            Minimum = 0.1,
+            Maximum = 2,
+            DisplayMethod = "Value",
+            Precision = 1,
+            Callback = function(value)
+                KillAura.Settings.AttackDelay.Value = value
+                if notify then
+                    notify("KillAura", "Attack Delay set to: " .. value)
+                end
+            end
+        })
+        UI.Sections.KillAura:Slider({
+            Name = "Range Plus",
+            Default = KillAura.Settings.RangePlus.Default,
+            Minimum = 0,
+            Maximum = 10,
+            DisplayMethod = "Value",
+            Precision = 0,
+            Callback = function(value)
+                KillAura.Settings.RangePlus.Value = value
+                if notify then
+                    notify("KillAura", "Range Plus set to: " .. value)
+                end
+            end
+        })
+        UI.Sections.KillAura:Slider({
+            Name = "Default Attack Radius",
+            Default = KillAura.Settings.DefaultAttackRadius.Default,
+            Minimum = 0,
+            Maximum = 20,
+            DisplayMethod = "Value",
+            Precision = 0,
+            Callback = function(value)
+                KillAura.Settings.DefaultAttackRadius.Value = tostring(value)
+                if notify then
+                    notify("KillAura", "Default Attack Radius set to: " .. value)
+                end
+            end
+        })
+        UI.Sections.KillAura:Slider({
+            Name = "Search Range",
+            Default = KillAura.Settings.SearchRange.Default,
+            Minimum = 1,
+            Maximum = 24,
+            DisplayMethod = "Value",
+            Precision = 0,
+            Callback = function(value)
+                KillAura.Settings.SearchRange.Value = value
+                if notify then
+                    notify("KillAura", "Search Range set to: " .. value)
+                end
+            end
+        })
+        UI.Sections.KillAura:Slider({
+            Name = "Strafe Range",
+            Default = KillAura.Settings.StrafeRange.Default,
+            Minimum = 1,
+            Maximum = 5,
+            DisplayMethod = "Value",
+            Precision = 0,
+            Callback = function(value)
+                KillAura.Settings.StrafeRange.Value = value
+                if notify then
+                    notify("KillAura", "Strafe Range set to: " .. value)
+                end
+            end
+        })
+        UI.Sections.KillAura:Slider({
+            Name = "Y Factor",
+            Default = KillAura.Settings.YFactor.Default,
+            Minimum = 0,
+            Maximum = 100,
+            DisplayMethod = "Percent",
+            Precision = 0,
+            Callback = function(value)
+                KillAura.Settings.YFactor.Value = value
+                if notify then
+                    notify("KillAura", "Y Factor set to: " .. value .. "%")
+                end
+            end
+        })
+    end
+
+    -- Настройка ThrowSilent
+    if UI.Sections.ThrowableSilent then
+        UI.Sections.ThrowableSilent:Header({ Name = "Throwable Silent" })
+        UI.Sections.ThrowableSilent:Toggle({
+            Name = "Enabled",
+            Default = ThrowSilent.Settings.Enabled.Default,
+            Callback = function(value)
+                ThrowSilent.Settings.Enabled.Value = value
+                initializeThrowSilent()
+                if notify then
+                    notify("Throwable Silent", "Throwable Silent " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.ThrowableSilent:Slider({
+            Name = "Throw Delay",
+            Default = ThrowSilent.Settings.ThrowDelay.Default,
+            Minimum = 0.1,
+            Maximum = 3,
+            DisplayMethod = "Value",
+            Precision = 1,
+            Callback = function(value)
+                ThrowSilent.Settings.ThrowDelay.Value = value
+                if notify then
+                    notify("Throwable Silent", "Throw Delay set to: " .. value)
+                end
+            end
+        })
+        UI.Sections.ThrowableSilent:Slider({
+            Name = "Range Plus",
+            Default = ThrowSilent.Settings.RangePlus.Default,
+            Minimum = 0,
+            Maximum = 70,
+            DisplayMethod = "Value",
+            Precision = 0,
+            Callback = function(value)
+                ThrowSilent.Settings.RangePlus.Value = value
+                if notify then
+                    notify("Throwable Silent", "Range Plus set to: " .. value)
+                end
+            end
+        })
+        UI.Sections.ThrowableSilent:Toggle({
+            Name = "Look At Target",
+            Default = ThrowSilent.Settings.LookAtTarget.Default,
+            Callback = function(value)
+                ThrowSilent.Settings.LookAtTarget.Value = value
+                if notify then
+                    notify("Throwable Silent", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.ThrowableSilent:Toggle({
+            Name = "Predict",
+            Default = ThrowSilent.Settings.Predict.Default,
+            Callback = function(value)
+                ThrowSilent.Settings.Predict.Value = value
+                if notify then
+                    notify("Throwable Silent", "Predict " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.ThrowableSilent:Toggle({
+            Name = "Predict Visualisation",
+            Default = ThrowSilent.Settings.PredictVisualisation.Default,
+            Callback = function(value)
+                ThrowSilent.Settings.PredictVisualisation.Value = value
+                if notify then
+                    notify("Throwable Silent", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+        UI.Sections.ThrowableSilent:Toggle({
+            Name = "Rage (Silent Spamming)",
+            Default = ThrowSilent.Settings.Rage.Default,
+            Callback = function(value)
+                ThrowSilent.Settings.Rage.Value = value
+                initializeThrowSilent()
+                if notify then
+                    notify("Throwable Silent", "Rage " .. (value and "Enabled" or "Disabled"), true)
+                end
+            end
+        })
+    end
+end
+
+-- Функция инициализации модуля
+local function Init(ui, core, notificationFunc)
+    UI = ui
+    Core = core
+    notify = notificationFunc
+
+    -- Добавление секций KillAura и ThrowSilent в Combat tab
+    if UI and UI.Tabs and UI.Tabs.Combat then
+        UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
+        UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
+    else
+        warn("Failed to initialize UI sections: UI.Tabs.Combat is nil")
         return
     end
-    
-    local currentTime = tick()
-    checkToolChange()
-    
-    local character = Core.PlayerData.LocalPlayer.Character
-    if character and character:FindFirstChild("HumanoidRootPart") then
-        local equippedTool = getEquippedTool()
-        if equippedTool and isMeleeWeapon(equippedTool) then
-            local attackRadius = getAttackRadius(equippedTool)
-            local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
-            
-            -- Постоянное обновление предсказания и визуализации
-            if nearestPlayer1 then
-                predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
-                if nearestPlayer2 then
-                    predictTargetPosition(nearestPlayer2, "PredictVisualPart2", "PredictBeam2")
+
+    -- Настройка UI
+    setupUI()
+
+    -- Инициализация KillAura и ThrowSilent
+    initializeTargetStrafe()
+    initializeThrowSilent()
+
+    -- Настройка соединений
+    local connection
+    connection = Core.Services.RunService.RenderStepped:Connect(function()
+        if not KillAura.Settings.Enabled.Value then
+            if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+            if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
+            if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+            if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+            checkToolChange()
+            checkToolChangeThrowSilent()
+            return
+        end
+        
+        local currentTime = tick()
+        checkToolChange()
+        
+        local character = Core.PlayerData.LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local equippedTool = getEquippedTool()
+            if equippedTool and isMeleeWeapon(equippedTool) then
+                local attackRadius = getAttackRadius(equippedTool)
+                local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
+                
+                if nearestPlayer1 then
+                    predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
+                    if nearestPlayer2 then
+                        predictTargetPosition(nearestPlayer2, "PredictVisualPart2", "PredictBeam2")
+                    else
+                        if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+                        if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+                    end
+                    
+                    if KillAura.Settings.LookAtTarget.Value then
+                        if KillAura.Settings.LookAtMethod.Value == "AlwaysAim" then
+                            lookAtTarget(nearestPlayer1, false)
+                        elseif KillAura.Settings.LookAtMethod.Value == "MultiAim" then
+                            local targets = {}
+                            if nearestPlayer1 then table.insert(targets, nearestPlayer1) end
+                            if nearestPlayer2 then table.insert(targets, nearestPlayer2) end
+                            
+                            if #targets > 0 then
+                                if currentTime - KillAura.State.LastSwitchTime >= 0.1 then
+                                    KillAura.State.CurrentTargetIndex = KillAura.State.CurrentTargetIndex + 1
+                                    if KillAura.State.CurrentTargetIndex > #targets then
+                                        KillAura.State.CurrentTargetIndex = 1
+                                    end
+                                    KillAura.State.LastSwitchTime = currentTime
+                                end
+                                lookAtTarget(targets[KillAura.State.CurrentTargetIndex], false)
+                            end
+                        elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
+                            lookAtTarget(nearestPlayer1, false)
+                        end
+                    end
                 else
+                    if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+                    if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
                     if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
                     if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
                 end
                 
-                if KillAura.Settings.LookAtTarget.Value then
-                    if KillAura.Settings.LookAtMethod.Value == "AlwaysAim" then
-                        lookAtTarget(nearestPlayer1, false)
-                    elseif KillAura.Settings.LookAtMethod.Value == "MultiAim" then
-                        -- Быстрое переключение между целями
-                        local targets = {}
-                        if nearestPlayer1 then table.insert(targets, nearestPlayer1) end
-                        if nearestPlayer2 then table.insert(targets, nearestPlayer2) end
-                        
-                        if #targets > 0 then
-                            if currentTime - KillAura.State.LastSwitchTime >= 0.1 then -- Переключаемся каждые 0.1 секунды
-                                KillAura.State.CurrentTargetIndex = KillAura.State.CurrentTargetIndex + 1
-                                if KillAura.State.CurrentTargetIndex > #targets then
-                                    KillAura.State.CurrentTargetIndex = 1
-                                end
-                                KillAura.State.LastSwitchTime = currentTime
-                            end
-                            lookAtTarget(targets[KillAura.State.CurrentTargetIndex], false)
-                        end
-                    elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
-                        lookAtTarget(nearestPlayer1, false)
-                    end
+                if nearestPlayer1 and currentTime - KillAura.State.LastAttackTime >= KillAura.Settings.AttackDelay.Value then
+                    KillAura.State.LastAttackTime = currentTime
                 end
             else
                 if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
@@ -843,294 +1153,28 @@ connection = Core.Services.RunService.RenderStepped:Connect(function()
                 if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
                 if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
             end
-            
-            -- Логика атаки
-            if nearestPlayer1 and currentTime - KillAura.State.LastAttackTime >= KillAura.Settings.AttackDelay.Value then
-                KillAura.State.LastAttackTime = currentTime
-            end
-        else
-            if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
-            if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
-            if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
-            if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
         end
-    end
-end)
+    end)
 
--- Инициализация
-initializeTargetStrafe()
-initializeThrowSilent()
-Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(character)
-    character:WaitForChild("HumanoidRootPart")
-    KillAura.State.StrafeAngle = 0
-    KillAura.State.StrafeVector = nil
-    KillAura.State.LastTarget = nil
-    KillAura.State.LastTool = nil
-    KillAura.State.CurrentTargetIndex = 1
-    KillAura.State.LastSwitchTime = 0
-    if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
-    if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
-    if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
-    if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-    -- ThrowSilent
-    ThrowSilent.State.LastTool = nil
-    if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
-    if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-end)
-
-if UI.Sections.KillAura then
-    UI.Sections.KillAura:Header({ Name = "KillAura" })
-    UI.Sections.KillAura:Toggle({
-        Name = "Enabled",
-        Default = KillAura.Settings.Enabled.Default,
-        Callback = function(value)
-            KillAura.Settings.Enabled.Value = value
-            notify("KillAura", "KillAura " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.KillAura:Dropdown({
-        Name = "Send Method",
-        Default = KillAura.Settings.SendMethod.Default,
-        Options = {"Single", "Multi"},
-        Callback = function(value)
-            KillAura.Settings.SendMethod.Value = value
-            notify("KillAura", "Send Method set to: " .. value, true)
-        end
-    })
-    UI.Sections.KillAura:Slider({
-        Name = "Multi FOV",
-        Default = KillAura.Settings.MultiFOV.Default,
-        Minimum = 0,
-        Maximum = 3080,
-        DisplayMethod = "Value",
-        Precision = 0,
-        Callback = function(value)
-            KillAura.Settings.MultiFOV.Value = value
-            notify("KillAura", "Multi FOV set to: " .. value .. " degrees")
-        end
-    })
-    UI.Sections.KillAura:Toggle({
-        Name = "Visible Check",
-        Default = KillAura.Settings.VisibleCheck.Default,
-        Callback = function(value)
-            KillAura.Settings.VisibleCheck.Value = value
-            notify("KillAura", "Visible Check " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.KillAura:Toggle({
-        Name = "Look At Target",
-        Default = KillAura.Settings.LookAtTarget.Default,
-        Callback = function(value)
-            KillAura.Settings.LookAtTarget.Value = value
-            notify("KillAura", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.KillAura:Dropdown({
-        Name = "Look At Method",
-        Default = KillAura.Settings.LookAtMethod.Default,
-        Options = {"Snap", "AlwaysAim", "MultiAim", "MultiSnapAim"},
-        Callback = function(value)
-            KillAura.Settings.LookAtMethod.Value = value
-            notify("KillAura", "Look At Method set to: " .. value, true)
-        end
-    })
-    UI.Sections.KillAura:Toggle({
-        Name = "Predict",
-        Default = KillAura.Settings.Predict.Default,
-        Callback = function(value)
-            KillAura.Settings.Predict.Value = value
-            notify("KillAura", "Predict " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.KillAura:Toggle({
-        Name = "Predict Visualisation",
-        Default = KillAura.Settings.PredictVisualisation.Default,
-        Callback = function(value)
-            KillAura.Settings.PredictVisualisation.Value = value
-            notify("KillAura", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.KillAura:Toggle({
-        Name = "Target Strafe",
-        Default = KillAura.Settings.TargetStrafe.Default,
-        Callback = function(value)
-            KillAura.Settings.TargetStrafe.Value = value
-            initializeTargetStrafe()
-            notify("KillAura", "Target Strafe " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.KillAura:Slider({
-        Name = "Attack Delay",
-        Default = KillAura.Settings.AttackDelay.Default,
-        Minimum = 0.1,
-        Maximum = 2,
-        DisplayMethod = "Value",
-        Precision = 1,
-        Callback = function(value)
-            KillAura.Settings.AttackDelay.Value = value
-            notify("KillAura", "Attack Delay set to: " .. value)
-        end
-    })
-    UI.Sections.KillAura:Slider({
-        Name = "Range Plus",
-        Default = KillAura.Settings.RangePlus.Default,
-        Minimum = 0,
-        Maximum = 10,
-        DisplayMethod = "Value",
-        Precision = 0,
-        Callback = function(value)
-            KillAura.Settings.RangePlus.Value = value
-            notify("KillAura", "Range Plus set to: " .. value)
-        end
-    })
-    UI.Sections.KillAura:Slider({
-        Name = "Default Attack Radius",
-        Default = KillAura.Settings.DefaultAttackRadius.Default,
-        Minimum = 0,
-        Maximum = 20,
-        DisplayMethod = "Value",
-        Precision = 0,
-        Callback = function(value)
-            KillAura.Settings.DefaultAttackRadius.Value = tostring(value)
-            notify("KillAura", "Default Attack Radius set to: " .. value)
-        end
-    })
-    UI.Sections.KillAura:Slider({
-        Name = "Search Range",
-        Default = KillAura.Settings.SearchRange.Default,
-        Minimum = 1,
-        Maximum = 24,
-        DisplayMethod = "Value",
-        Precision = 0,
-        Callback = function(value)
-            KillAura.Settings.SearchRange.Value = value
-            notify("KillAura", "Search Range set to: " .. value)
-        end
-    })
-    UI.Sections.KillAura:Slider({
-        Name = "Strafe Range",
-        Default = KillAura.Settings.StrafeRange.Default,
-        Minimum = 1,
-        Maximum = 5,
-        DisplayMethod = "Value",
-        Precision = 0,
-        Callback = function(value)
-            KillAura.Settings.StrafeRange.Value = value
-            notify("KillAura", "Strafe Range set to: " .. value)
-        end
-    })
-    UI.Sections.KillAura:Slider({
-        Name = "Y Factor",
-        Default = KillAura.Settings.YFactor.Default,
-        Minimum = 0,
-        Maximum = 100,
-        DisplayMethod = "Percent",
-        Precision = 0,
-        Callback = function(value)
-            KillAura.Settings.YFactor.Value = value
-            notify("KillAura", "Y Factor set to: " .. value .. "%")
-        end
-    })
-end
--- ThrowSilent
-
-if UI.Sections.ThrowableSilent then
-    UI.Sections.ThrowableSilent:Header({ Name = "Throwable Silent" })
-    UI.Sections.ThrowableSilent:Toggle({
-        Name = "Enabled",
-        Default = ThrowSilent.Settings.Enabled.Default,
-        Callback = function(value)
-            ThrowSilent.Settings.Enabled.Value = value
-            initializeThrowSilent()
-            notify("Throwable Silent", "Throwable Silent " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.ThrowableSilent:Slider({
-        Name = "Throw Delay",
-        Default = ThrowSilent.Settings.ThrowDelay.Default,
-        Minimum = 0.1,
-        Maximum = 3,
-        DisplayMethod = "Value",
-        Precision = 1,
-        Callback = function(value)
-            ThrowSilent.Settings.ThrowDelay.Value = value
-            notify("Throwable Silent", "Throw Delay set to: " .. value)
-        end
-    })
-    UI.Sections.ThrowableSilent:Slider({
-        Name = "Range Plus",
-        Default = ThrowSilent.Settings.RangePlus.Default,
-        Minimum = 0,
-        Maximum = 70,
-        DisplayMethod = "Value",
-        Precision = 0,
-        Callback = function(value)
-            ThrowSilent.Settings.RangePlus.Value = value
-            notify("Throwable Silent", "Range Plus set to: " .. value)
-        end
-    })
-    UI.Sections.ThrowableSilent:Toggle({
-        Name = "Look At Target",
-        Default = ThrowSilent.Settings.LookAtTarget.Default,
-        Callback = function(value)
-            ThrowSilent.Settings.LookAtTarget.Value = value
-            notify("Throwable Silent", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.ThrowableSilent:Toggle({
-        Name = "Predict",
-        Default = ThrowSilent.Settings.Predict.Default,
-        Callback = function(value)
-            ThrowSilent.Settings.Predict.Value = value
-            notify("Throwable Silent", "Predict " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.ThrowableSilent:Toggle({
-        Name = "Predict Visualisation",
-        Default = ThrowSilent.Settings.PredictVisualisation.Default,
-        Callback = function(value)
-            ThrowSilent.Settings.PredictVisualisation.Value = value
-            notify("Throwable Silent", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-    UI.Sections.ThrowableSilent:Toggle({
-        Name = "Rage (Silent Spamming)",
-        Default = ThrowSilent.Settings.Rage.Default,
-        Callback = function(value)
-            ThrowSilent.Settings.Rage.Value = value
-            initializeThrowSilent()
-            notify("Throwable Silent", "Rage " .. (value and "Enabled" or "Disabled"), true)
-        end
-    })
-end
-local function Init(ui, core, notificationFunc)
-    UI = ui
-    Core = core
-    notify = notificationFunc
-
-    -- Add KillAura and ThrowableSilent sections to the Combat tab
-    if UI and UI.Tabs and UI.Tabs.Combat then
-        UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
-        UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
-    end
-
-    -- Setup UI elements
-    setupUI()
-
-    -- Hook melee attack remote
-    hookMeleeAttack()
-
-    -- Initialize Target Strafe
-    initializeTargetStrafe()
-
-    -- Initialize ThrowSilent
-    initializeThrowSilent()
-
-    -- Setup connections
-    setupConnections()
+    Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(character)
+        character:WaitForChild("HumanoidRootPart")
+        KillAura.State.StrafeAngle = 0
+        KillAura.State.StrafeVector = nil
+        KillAura.State.LastTarget = nil
+        KillAura.State.LastTool = nil
+        KillAura.State.CurrentTargetIndex = 1
+        KillAura.State.LastSwitchTime = 0
+        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
+        if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+        if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+        ThrowSilent.State.LastTool = nil
+        if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
+        if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
+    end)
 end
 
--- Return the module table with the Init function
+-- Возврат модуля
 return {
     Init = Init
 }
