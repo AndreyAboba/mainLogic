@@ -36,7 +36,15 @@ function Misc.Init(UI, Core, notify)
         return players
     end
 
-    local currentSelection = Core.Services.FriendsList
+    -- Преобразуем текущий FriendsList в словарь с нормализацией имён
+    local currentSelection = {}
+    for _, playerName in pairs(Core.Services.FriendsList) do
+        if type(playerName) == "string" then
+            currentSelection[playerName:lower()] = true
+        end
+    end
+    Core.Services.FriendsList = currentSelection
+
     local friendDropdown
 
     local function updateFriendsList(selected)
@@ -46,43 +54,52 @@ function Misc.Init(UI, Core, notify)
         Cache.LastFriendUpdate = tick()
 
         local selectedPlayers = {}
+        local selectedPlayersArray = {} -- Для отображения в уведомлениях
         if type(selected) == "table" then
             for key, value in pairs(selected) do
                 if type(value) == "string" then
-                    table.insert(selectedPlayers, value)
+                    selectedPlayers[value:lower()] = true
+                    table.insert(selectedPlayersArray, value)
                 elseif type(key) == "string" and value == true then
-                    table.insert(selectedPlayers, key)
+                    selectedPlayers[key:lower()] = true
+                    table.insert(selectedPlayersArray, key)
                 elseif type(key) == "string" then
-                    table.insert(selectedPlayers, key)
+                    selectedPlayers[key:lower()] = true
+                    table.insert(selectedPlayersArray, key)
                 end
             end
         elseif type(selected) == "string" then
-            selectedPlayers = {selected}
+            selectedPlayers[selected:lower()] = true
+            selectedPlayersArray = {selected}
         end
 
-        if #selectedPlayers == #Core.Services.FriendsList and table.concat(selectedPlayers, ",") == table.concat(Core.Services.FriendsList, ",") then
+        -- Сравниваем с текущим списком
+        local currentArray = {}
+        for playerName, _ in pairs(Core.Services.FriendsList) do
+            table.insert(currentArray, playerName)
+        end
+        table.sort(currentArray)
+        table.sort(selectedPlayersArray)
+        if #selectedPlayersArray == #currentArray and table.concat(selectedPlayersArray, ",") == table.concat(currentArray, ",") then
             return
         end
 
         Core.Services.FriendsList = selectedPlayers
         currentSelection = selectedPlayers
 
-        notify("Friend List", "Updated friends: " .. (#Core.Services.FriendsList > 0 and table.concat(Core.Services.FriendsList, ", ") or "None"), true)
+        notify("Friend List", "Updated friends: " .. (#selectedPlayersArray > 0 and table.concat(selectedPlayersArray, ", ") or "None"), true)
     end
 
     local function updateFriendDropdownOptions()
         if not friendDropdown then return end
 
-        local previousSelection = {}
-        for _, playerName in pairs(currentSelection) do
-            previousSelection[playerName] = true
-        end
+        local previousSelection = Core.Services.FriendsList
 
         local newOptions = getPlayerList()
         local newSelection = {}
         for _, playerName in pairs(newOptions) do
-            if previousSelection[playerName] then
-                table.insert(newSelection, playerName)
+            if previousSelection[playerName:lower()] then
+                newSelection[playerName:lower()] = true
             end
         end
 
@@ -104,16 +121,25 @@ function Misc.Init(UI, Core, notify)
 
         Core.Services.FriendsList = newSelection
         currentSelection = newSelection
-        friendDropdown:UpdateSelection(newSelection)
+        local selectionArray = {}
+        for playerName, _ in pairs(newSelection) do
+            table.insert(selectionArray, playerName)
+        end
+        friendDropdown:UpdateSelection(selectionArray)
     end
 
     UI.Sections.FriendList:Header({ Name = "Friend List" })
 
+    -- При инициализации передаём массив имён для Dropdown
+    local initialSelectionArray = {}
+    for playerName, _ in pairs(currentSelection) do
+        table.insert(initialSelectionArray, playerName)
+    end
     friendDropdown = UI.Sections.FriendList:Dropdown({
         Name = "Select Friend",
         Options = getPlayerList(),
         Multi = true,
-        Default = Core.Services.FriendsList,
+        Default = initialSelectionArray,
         Callback = updateFriendsList
     })
 
@@ -140,7 +166,11 @@ function Misc.Init(UI, Core, notify)
     UI.Sections.FriendList:Button({
         Name = "Show Friends List",
         Callback = function()
-            notify("Friend List", "Current friends: " .. (#Core.Services.FriendsList > 0 and table.concat(Core.Services.FriendsList, ", ") or "None"), true)
+            local friendsArray = {}
+            for playerName, _ in pairs(Core.Services.FriendsList) do
+                table.insert(friendsArray, playerName)
+            end
+            notify("Friend List", "Current friends: " .. (#friendsArray > 0 and table.concat(friendsArray, ", ") or "None"), true)
         end
     })
 
@@ -152,9 +182,9 @@ function Misc.Init(UI, Core, notify)
     end)
 
     Core.Services.Players.PlayerRemoving:Connect(function(player)
-        if table.find(Core.Services.FriendsList, player.Name) then
-            table.remove(Core.Services.FriendsList, table.find(Core.Services.FriendsList, player.Name))
-            table.remove(currentSelection, table.find(currentSelection, player.Name))
+        if Core.Services.FriendsList[player.Name:lower()] then
+            Core.Services.FriendsList[player.Name:lower()] = nil
+            currentSelection[player.Name:lower()] = nil
             notify("Friend List", player.Name .. " has left and was removed from friends")
         end
         task.defer(function()
