@@ -64,7 +64,9 @@ local ThrowSilent = {
     }
 }
 
-local UI, Core, notify
+local PREDICT_BASE_AMOUNT = 0.1
+local PREDICT_SPEED_FACTOR = 0.002
+local PREDICT_DISTANCE_FACTOR = 0.01
 
 -- Raycast параметры
 local rayCheck = RaycastParams.new()
@@ -1079,34 +1081,3 @@ if UI.Sections.ThrowableSilent then
         end
     })
 end
-local function Init(ui, core, notificationFunc)
-    UI = ui
-    Core = core
-    notify = notificationFunc
-
-    -- Add KillAura and ThrowableSilent sections to the Combat tab
-    if UI and UI.Tabs and UI.Tabs.Combat then
-        UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
-        UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
-    end
-
-    -- Setup UI elements
-    setupUI()
-
-    -- Hook melee attack remote
-    hookMeleeAttack()
-
-    -- Initialize Target Strafe
-    initializeTargetStrafe()
-
-    -- Initialize ThrowSilent
-    initializeThrowSilent()
-
-    -- Setup connections
-    setupConnections()
-end
-
--- Return the module table with the Init function
-return {
-    Init = Init
-}
