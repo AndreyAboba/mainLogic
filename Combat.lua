@@ -1,48 +1,13 @@
--- Основные зависимости и сервисы
-local Core = {
-    Services = {
-        Players = game:GetService("Players"),
-        UserInputService = game:GetService("UserInputService"),
-        RunService = game:GetService("RunService"),
-        TweenService = game:GetService("TweenService"),
-        Workspace = game:GetService("Workspace"),
-        ReplicatedStorage = game:GetService("ReplicatedStorage"),
-        FriendsList = {},
-        CoreGuiService = game:GetService("CoreGui")
-    },
-    PlayerData = {},
-    Libraries = {
-        MacLib = nil
-    },
-    NotificationCooldown = { LastTime = 0, Delay = 5 }
-}
-
 -- Кэшируем часто используемые сервисы для уменьшения вызовов
-local Players = Core.Services.Players
-local Workspace = Core.Services.Workspace
-local TweenService = Core.Services.TweenService
-local RunService = Core.Services.RunService
-local ReplicatedStorage = Core.Services.ReplicatedStorage
-
--- Инициализация Core.PlayerData раньше, чем использование
-Core.PlayerData.LocalPlayer = Players.LocalPlayer
-Core.PlayerData.Camera = Workspace.CurrentCamera
+local Players
+local Workspace
+local TweenService
+local RunService
+local ReplicatedStorage
 
 -- Оптимизация: кэшируем игрока и его персонажа
-local LocalPlayer = Core.PlayerData.LocalPlayer
+local LocalPlayer
 local LocalCharacter = nil
-
--- Проверяем, что LocalPlayer существует, прежде чем подписываться на события
-if LocalPlayer then
-    LocalPlayer.CharacterAdded:Connect(function(character)
-        LocalCharacter = character
-    end)
-    if LocalPlayer.Character then
-        LocalCharacter = LocalPlayer.Character
-    end
-else
-    warn("LocalPlayer is nil, cannot set up CharacterAdded connection")
-end
 
 -- Переменные для UI и уведомлений
 local UI, Core, notify
@@ -585,19 +550,16 @@ local function checkToolChangeThrowSilent()
     end
 end
 
-local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-if not Remotes then
-    warn("Remotes not found in ReplicatedStorage")
-end
-
-local SendRemote = Remotes and Remotes:FindFirstChild("Send")
-if not SendRemote then
-    warn("Send not found in ReplicatedStorage.Remotes")
-end
-
 local function initializeThrowSilent()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then
+        warn("Remotes not found in ReplicatedStorage")
+        return
+    end
+
+    local SendRemote = Remotes:FindFirstChild("Send")
     if not SendRemote then
-        warn("SendRemote is nil, cannot initialize ThrowSilent")
+        warn("Send not found in ReplicatedStorage.Remotes")
         return
     end
 
@@ -687,8 +649,20 @@ local function initializeThrowSilent()
     end)
 end
 
-local oldFireServer
-if SendRemote then
+local function hookFireServer()
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    if not Remotes then
+        warn("Remotes not found in ReplicatedStorage")
+        return
+    end
+
+    local SendRemote = Remotes:FindFirstChild("Send")
+    if not SendRemote then
+        warn("Send not found in ReplicatedStorage.Remotes")
+        return
+    end
+
+    local oldFireServer
     oldFireServer = hookfunction(SendRemote.FireServer, function(self, ...)
         local args = {...}
         if #args >= 2 and args[2] == "melee_attack" then
@@ -726,8 +700,6 @@ if SendRemote then
         end
         return oldFireServer(self, unpack(args))
     end)
-else
-    warn("SendRemote is nil, cannot hook FireServer")
 end
 
 local lastKillAuraToolCheckTime = 0
@@ -1062,6 +1034,26 @@ local function Init(ui, core, notificationFunc)
     Core = core
     notify = notificationFunc
 
+    -- Инициализация сервисов из переданного Core
+    Players = Core.Services.Players
+    Workspace = Core.Services.Workspace
+    TweenService = Core.Services.TweenService
+    RunService = Core.Services.RunService
+    ReplicatedStorage = Core.Services.ReplicatedStorage
+
+    -- Инициализация LocalPlayer
+    LocalPlayer = Core.PlayerData.LocalPlayer
+    if LocalPlayer then
+        LocalPlayer.CharacterAdded:Connect(function(character)
+            LocalCharacter = character
+        end)
+        if LocalPlayer.Character then
+            LocalCharacter = LocalPlayer.Character
+        end
+    else
+        warn("LocalPlayer is nil, cannot set up CharacterAdded connection")
+    end
+
     if UI and UI.Tabs and UI.Tabs.Combat then
         UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
         UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
@@ -1073,6 +1065,7 @@ local function Init(ui, core, notificationFunc)
     setupUI()
     initializeTargetStrafe()
     initializeThrowSilent()
+    hookFireServer()
 
     local connection
     connection = RunService.RenderStepped:Connect(function()
