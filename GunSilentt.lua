@@ -141,14 +141,18 @@ local function updateFovCircle(deltaTime)
         local speed = GunSilent.Settings.GradientSpeed.Value
         local t = (math.sin(GunSilent.State.GradientTime / speed * 2 * math.pi) + 1) / 2
 
-        -- Check if ESP.Settings exists, otherwise fall back to Watermark.Settings
+        -- Проверяем наличие Watermark и его полей, используем значения по умолчанию, если что-то отсутствует
         local color1, color2
         if GunSilent.Watermark and GunSilent.Watermark.ESP and GunSilent.Watermark.ESP.Settings then
             color1 = GunSilent.Watermark.ESP.Settings.GradientColor1.Value
             color2 = GunSilent.Watermark.ESP.Settings.GradientColor2.Value
-        else
+        elseif GunSilent.Watermark and GunSilent.Watermark.Settings and GunSilent.Watermark.Settings.gradientColor1 and GunSilent.Watermark.Settings.gradientColor2 then
             color1 = GunSilent.Watermark.Settings.gradientColor1
             color2 = GunSilent.Watermark.Settings.gradientColor2
+        else
+            -- Если ничего не доступно, используем белый цвет по умолчанию
+            color1 = Color3.fromRGB(255, 255, 255)
+            color2 = Color3.fromRGB(255, 255, 255)
         end
 
         local interpolatedColor = color1:Lerp(color2, t)
