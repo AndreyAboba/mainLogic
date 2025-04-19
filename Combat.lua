@@ -850,8 +850,8 @@ function Combat.Init(UI, Core, notify)
 
     if UI.Tabs and UI.Tabs.Combat then
         local CombatTab = UI.Tabs.Combat
-        local KillAuraSection = CombatTab:AddSection({ Name = "KillAura" })
-        local ThrowSilentSection = CombatTab:AddSection({ Name = "Throwable Silent" })
+        local KillAuraSection = CombatTab:Section({ Name = "KillAura" })
+        local ThrowSilentSection = CombatTab:Section({ Name = "Throwable Silent" })
 
         KillAuraSection:Header({ Name = "KillAura" })
         KillAuraSection:Toggle({
