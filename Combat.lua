@@ -526,7 +526,7 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
         ThrowSilent.State.RotationVisualPart.CFrame = CFrame.lookAt(startPos, endPos)
         ThrowSilent.State.RotationVisualPart.Position = startPos + (adjustedDirection * 2.5)
     else
-        if ThrowSilent.State byVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
+        if ThrowSilent.State.byVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
     end
     
