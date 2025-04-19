@@ -141,25 +141,21 @@ local function getNearestPlayers(attackRadius)
     local shortestDistance1 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
     
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player == Core.PlayerData.LocalPlayer then
-            continue
-        end
-
-        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then
-            continue
-        end
-
-        local targetChar = player.Character
-        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-            local targetRoot = targetChar.HumanoidRootPart
-            local distance = (rootPart.Position - targetRoot.Position).Magnitude
-            
-            if distance <= shortestDistance1 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
-                rayCheck.FilterDescendantsInstances = {character, targetChar}
-                local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
-                if not raycastResult then
-                    table.insert(nearestPlayers, { Player = player, Distance = distance })
-                    shortestDistance1 = distance
+        if player ~= Core.PlayerData.LocalPlayer then
+            if not (Core.FriendsList and table.find(Core.FriendsList, player.Name)) then
+                local targetChar = player.Character
+                if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+                    local targetRoot = targetChar.HumanoidRootPart
+                    local distance = (rootPart.Position - targetRoot.Position).Magnitude
+                    
+                    if distance <= shortestDistance1 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
+                        rayCheck.FilterDescendantsInstances = {character, targetChar}
+                        local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
+                        if not raycastResult then
+                            table.insert(nearestPlayers, { Player = player, Distance = distance })
+                            shortestDistance1 = distance
+                        end
+                    end
                 end
             end
         end
@@ -174,25 +170,21 @@ local function getNearestPlayers(attackRadius)
     local shortestDistance2 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
     
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player == Core.PlayerData.LocalPlayer or player == nearestPlayer1 then
-            continue
-        end
-
-        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then
-            continue
-        end
-
-        local targetChar = player.Character
-        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-            local targetRoot = targetChar.HumanoidRootPart
-            local distance = (rootPart.Position - targetRoot.Position).Magnitude
-            
-            if distance <= shortestDistance2 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
-                rayCheck.FilterDescendantsInstances = {character, targetChar}
-                local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
-                if not raycastResult then
-                    nearestPlayer2 = player
-                    shortestDistance2 = distance
+        if player ~= Core.PlayerData.LocalPlayer and player ~= nearestPlayer1 then
+            if not (Core.FriendsList and table.find(Core.FriendsList, player.Name)) then
+                local targetChar = player.Character
+                if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+                    local targetRoot = targetChar.HumanoidRootPart
+                    local distance = (rootPart.Position - targetRoot.Position).Magnitude
+                    
+                    if distance <= shortestDistance2 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
+                        rayCheck.FilterDescendantsInstances = {character, targetChar}
+                        local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
+                        if not raycastResult then
+                            nearestPlayer2 = player
+                            shortestDistance2 = distance
+                        end
+                    end
                 end
             end
         end
@@ -302,7 +294,7 @@ local function initializeTargetStrafe()
         
         KillAura.State.OldMoveFunction = KillAura.State.MoveModule.moveFunction
         KillAura.State.MoveModule.moveFunction = function(self, moveVector, faceCamera)
-            local character = Core.Player Dai.LocalPlayer.Character
+            local character = Core.PlayerData.LocalPlayer.Character
             local nearestPlayer1, _ = getNearestPlayers(getAttackRadius(getEquippedTool()))
             
             if nearestPlayer1 then
@@ -414,17 +406,18 @@ local function getNearestPlayer(throwRadius)
     local shortestDistance = throwRadius
     
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player == Core.PlayerData.LocalPlayer then continue end
-        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then continue end
-
-        local targetChar = player.Character
-        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-            local targetRoot = targetChar.HumanoidRootPart
-            local distance = (rootPart.Position - targetRoot.Position).Magnitude
-            
-            if distance <= shortestDistance and targetChar.Humanoid.Health > 0 then
-                shortestDistance = distance
-                nearestPlayer = player
+        if player ~= Core.PlayerData.LocalPlayer then
+            if not (Core.FriendsList and table.find(Core.FriendsList, player.Name)) then
+                local targetChar = player.Character
+                if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+                    local targetRoot = targetChar.HumanoidRootPart
+                    local distance = (rootPart.Position - targetRoot.Position).Magnitude
+                    
+                    if distance <= shortestDistance and targetChar.Humanoid.Health > 0 then
+                        shortestDistance = distance
+                        nearestPlayer = player
+                    end
+                end
             end
         end
     end
