@@ -140,8 +140,17 @@ local function updateFovCircle(deltaTime)
         GunSilent.State.GradientTime = GunSilent.State.GradientTime + deltaTime
         local speed = GunSilent.Settings.GradientSpeed.Value
         local t = (math.sin(GunSilent.State.GradientTime / speed * 2 * math.pi) + 1) / 2
-        local color1 = GunSilent.Watermark.ESP.Settings.GradientColor1.Value
-        local color2 = GunSilent.Watermark.ESP.Settings.GradientColor2.Value
+
+        -- Check if ESP.Settings exists, otherwise fall back to Watermark.Settings
+        local color1, color2
+        if GunSilent.Watermark and GunSilent.Watermark.ESP and GunSilent.Watermark.ESP.Settings then
+            color1 = GunSilent.Watermark.ESP.Settings.GradientColor1.Value
+            color2 = GunSilent.Watermark.ESP.Settings.GradientColor2.Value
+        else
+            color1 = GunSilent.Watermark.Settings.gradientColor1
+            color2 = GunSilent.Watermark.Settings.gradientColor2
+        end
+
         local interpolatedColor = color1:Lerp(color2, t)
         GunSilent.State.FovCircle.Color = interpolatedColor
     else
