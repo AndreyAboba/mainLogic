@@ -1,3 +1,24 @@
+Core = {
+    Services = {
+        Players = game:GetService("Players"),
+        UserInputService = game:GetService("UserInputService"),
+        RunService = game:GetService("RunService"),
+        TweenService = game:GetService("TweenService"),
+        Workspace = game:GetService("Workspace"),
+        ReplicatedStorage = game:GetService("ReplicatedStorage"),
+        FriendsList = {},
+        CoreGuiService = game:GetService("CoreGui")
+    },
+    PlayerData = {},
+    Libraries = {
+        MacLib = nil
+    },
+    NotificationCooldown = { LastTime = 0, Delay = 5 }
+}
+
+Core.PlayerData.LocalPlayer = Core.Services.Players.LocalPlayer
+Core.PlayerData.Camera = Core.Services.Workspace.CurrentCamera
+local UI, notify
 local KillAura = {
     Settings = {
         Enabled = { Value = false, Default = false },
@@ -63,8 +84,6 @@ local ThrowSilent = {
         }
     }
 }
-
-local UI, Core, notify
 
 local PREDICT_BASE_AMOUNT = 0.1
 local PREDICT_SPEED_FACTOR = 0.002
