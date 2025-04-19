@@ -93,16 +93,9 @@ function Misc.Init(UI, Core, notify)
     local function updateFriendDropdownOptions()
         if not friendDropdown then return end
 
-        local previousSelection = Core.Services.FriendsList
-
         local newOptions = getPlayerList()
-        local newSelection = {}
-        for _, playerName in pairs(newOptions) do
-            if previousSelection[playerName:lower()] then
-                newSelection[playerName:lower()] = true
-            end
-        end
 
+        -- Проверяем, изменился ли список опций
         local currentOptions = friendDropdown:GetOptions() or {}
         local optionsChanged = #newOptions ~= #currentOptions
         if not optionsChanged then
@@ -119,11 +112,16 @@ function Misc.Init(UI, Core, notify)
             friendDropdown:InsertOptions(newOptions)
         end
 
-        Core.Services.FriendsList = newSelection
-        currentSelection = newSelection
+        -- Обновляем выбор в Dropdown, но сохраняем всех друзей из FriendsList
         local selectionArray = {}
-        for playerName, _ in pairs(newSelection) do
-            table.insert(selectionArray, playerName)
+        for playerName, _ in pairs(Core.Services.FriendsList) do
+            -- Добавляем игрока в выбор, только если он сейчас в игре
+            for _, option in ipairs(newOptions) do
+                if option:lower() == playerName then
+                    table.insert(selectionArray, option)
+                    break
+                end
+            end
         end
         friendDropdown:UpdateSelection(selectionArray)
     end
@@ -182,11 +180,6 @@ function Misc.Init(UI, Core, notify)
     end)
 
     Core.Services.Players.PlayerRemoving:Connect(function(player)
-        if Core.Services.FriendsList[player.Name:lower()] then
-            Core.Services.FriendsList[player.Name:lower()] = nil
-            currentSelection[player.Name:lower()] = nil
-            notify("Friend List", player.Name .. " has left and was removed from friends")
-        end
         task.defer(function()
             Cache.LastUpdate = 0
             updateFriendDropdownOptions()
