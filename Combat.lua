@@ -183,10 +183,10 @@ local function getNearestPlayers(attackRadius)
     
     -- Оптимизация: кэшируем список игроков и фильтруем друзей заранее
     local allPlayers = Players:GetPlayers()
-    local friendsList = Core.FriendsList
+    local friendsList = Core.Services.FriendsList or {}
     local validPlayers = {}
     for _, player in pairs(allPlayers) do
-        if player ~= LocalPlayer and (not friendsList or not friendsList[player.Name]) then
+        if player ~= LocalPlayer and (not friendsList[player.Name]) then
             table.insert(validPlayers, player)
         end
     end
@@ -241,7 +241,8 @@ end
 local function lookAtTarget(target, isSnap, isMultiSnapSecondTarget)
     if not KillAura.Settings.LookAtTarget.Value or not target then return end
 
-    if Core.FriendsList and target.Name and Core.FriendsList[target.Name] then return end
+    local friendsList = Core.Services.FriendsList or {}
+    if target.Name and friendsList[target.Name] then return end
 
     local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
@@ -420,6 +421,10 @@ local cachedTarget = nil
 local function getNearestPlayer(throwRadius)
     local currentTime = tick()
     if currentTime - lastTargetUpdate < targetUpdateInterval and cachedTarget and cachedTarget.Character and cachedTarget.Character.Humanoid and cachedTarget.Character.Humanoid.Health > 0 then
+        local friendsList = Core.Services.FriendsList or {}
+        if cachedTarget.Name and friendsList[cachedTarget.Name] then
+            return nil
+        end
         return cachedTarget
     end
     lastTargetUpdate = currentTime
@@ -432,8 +437,9 @@ local function getNearestPlayer(throwRadius)
     local nearestPlayer = nil
     local shortestDistance = throwRadius
     
+    local friendsList = Core.Services.FriendsList or {}
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and (not Core.FriendsList or not Core.FriendsList[player.Name]) then
+        if player ~= LocalPlayer and (not friendsList[player.Name]) then
             local targetChar = player.Character
             if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
                 local targetRoot = targetChar.HumanoidRootPart
@@ -454,7 +460,8 @@ end
 local function lookAtTargetThrowSilent(target)
     if not ThrowSilent.Settings.LookAtTarget.Value or not target or not target.Name then return end
 
-    if Core.FriendsList and Core.FriendsList[target.Name] then return end
+    local friendsList = Core.Services.FriendsList or {}
+    if friendsList[target.Name] then return end
     
     local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
