@@ -241,7 +241,7 @@ end
 local function lookAtTarget(target, isSnap, isMultiSnapSecondTarget)
     if not KillAura.Settings.LookAtTarget.Value or not target then return end
 
-    if Core.FriendsList[target.Name] then return end
+    if Core.FriendsList and target.Name and Core.FriendsList[target.Name] then return end
 
     local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
@@ -376,7 +376,7 @@ local function initializeTargetStrafe()
                     KillAura.State.StrafeAngle = KillAura.State.StrafeAngle + factor % 360
                     moveVector = ((newPos - localPosition) * Vector3.new(1, 0, 1)).Unit
                     if moveVector ~= moveVector then moveVector = Vector3.new(0, 0, 0) end
-                    KillAura.State.SregulatedStrafeVector = moveVector
+                    KillAura.State.StrafeVector = moveVector
                 else
                     nearestPlayer1 = nil
                 end
@@ -452,9 +452,9 @@ local function getNearestPlayer(throwRadius)
 end
 
 local function lookAtTargetThrowSilent(target)
-    if not ThrowSilent.Settings.LookAtTarget.Value or not target then return end
+    if not ThrowSilent.Settings.LookAtTarget.Value or not target or not target.Name then return end
 
-    if Core.FriendsList[target.Name] then return end
+    if Core.FriendsList and Core.FriendsList[target.Name] then return end
     
     local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
