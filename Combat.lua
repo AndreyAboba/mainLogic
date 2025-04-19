@@ -1,3 +1,13 @@
+-- Attempt to load Core (adjust the path based on your game's structure)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Core = ReplicatedStorage:FindFirstChild("Core") and require(ReplicatedStorage:WaitForChild("Core"))
+
+-- Check if Core is available
+if not Core then
+    warn("Core module not found. This script requires the Core framework to function.")
+    return
+end
+
 local KillAura = {
     Settings = {
         Enabled = { Value = false, Default = false },
@@ -87,8 +97,7 @@ end
 local function isMeleeWeapon(tool)
     if not tool then return false end
     if tool.Name:lower() == "fists" then return true end
-    local replicatedStorage = game:GetService("ReplicatedStorage")
-    local items = replicatedStorage:FindFirstChild("Items")
+    local items = ReplicatedStorage:FindFirstChild("Items")
     if not items then return false end
     local melee = items:FindFirstChild("melee")
     if not melee then return false end
@@ -560,7 +569,6 @@ local function checkToolChangeThrowSilent()
     end
 end
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not Remotes then
     warn("Remotes not found in ReplicatedStorage")
