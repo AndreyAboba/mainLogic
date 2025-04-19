@@ -13,7 +13,7 @@ local LocalCharacter = nil
 local UI, Core, notify
 
 -- Переменная для отладки
-local debugMode = true -- Включи отладку для проверки FriendsList
+local debugMode = true -- Оставляем отладку включённой для проверки
 
 -- KillAura и ThrowSilent
 local KillAura = {
@@ -48,7 +48,7 @@ local KillAura = {
         LastTool = nil,
         CurrentTargetIndex = 1,
         LastSwitchTime = 0,
-        LastFriendsList = nil -- Добавляем для отслеживания изменений FriendsList
+        LastFriendsList = nil
     }
 }
 
@@ -152,13 +152,15 @@ local function getNearestPlayers(attackRadius)
     local nearestPlayers = {}
     local shortestDistance1 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
     
-    -- Оптимизация: кэшируем список игроков и фильтруем друзей заранее
     local allPlayers = Players:GetPlayers()
     local friendsList = Core.Services.FriendsList or {}
     
-    -- Отладка: выводим содержимое FriendsList
     if debugMode then
-        print("[KillAura Debug] FriendsList:", friendsList)
+        local friendsArray = {}
+        for playerName, _ in pairs(friendsList) do
+            table.insert(friendsArray, playerName)
+        end
+        print("[KillAura Debug] FriendsList:", friendsArray)
     end
     
     local validPlayers = {}
@@ -214,7 +216,6 @@ local function getNearestPlayers(attackRadius)
         end
     end
     
-    -- Отладка: выводим выбранных игроков
     if debugMode then
         print("[KillAura Debug] Selected nearestPlayer1:", nearestPlayer1 and nearestPlayer1.Name or "None")
         print("[KillAura Debug] Selected nearestPlayer2:", nearestPlayer2 and nearestPlayer2.Name or "None")
@@ -411,12 +412,14 @@ local function getNearestPlayer(throwRadius)
     local currentTime = tick()
     local friendsList = Core.Services.FriendsList or {}
     
-    -- Отладка: выводим содержимое FriendsList
     if debugMode then
-        print("[ThrowSilent Debug] FriendsList:", friendsList)
+        local friendsArray = {}
+        for playerName, _ in pairs(friendsList) do
+            table.insert(friendsArray, playerName)
+        end
+        print("[ThrowSilent Debug] FriendsList:", friendsArray)
     end
     
-    -- Проверяем, изменился ли FriendsList, и сбрасываем LastTarget, если изменился
     if KillAura.State.LastFriendsList ~= friendsList then
         if debugMode then
             print("[ThrowSilent Debug] FriendsList changed, resetting LastTarget")
@@ -426,7 +429,6 @@ local function getNearestPlayer(throwRadius)
     end
 
     if currentTime - lastTargetUpdate < targetUpdateInterval and ThrowSilent.State.LastTarget and ThrowSilent.State.LastTarget.Character and ThrowSilent.State.LastTarget.Character.Humanoid and ThrowSilent.State.LastTarget.Character.Humanoid.Health > 0 then
-        -- Проверяем, не добавили ли цель в FriendsList
         if ThrowSilent.State.LastTarget.Name and friendsList[ThrowSilent.State.LastTarget.Name] then
             if debugMode then
                 print("[ThrowSilent Debug] LastTarget now in FriendsList, resetting:", ThrowSilent.State.LastTarget.Name)
@@ -466,7 +468,6 @@ local function getNearestPlayer(throwRadius)
     ThrowSilent.State.LastTarget = nearestPlayer
     ThrowSilent.State.LastFriendsList = friendsList
     
-    -- Отладка: выводим выбранную цель
     if debugMode then
         print("[ThrowSilent Debug] Selected nearestPlayer:", nearestPlayer and nearestPlayer.Name or "None")
     end
@@ -620,7 +621,6 @@ local function initializeThrowSilent()
         return
     end
 
-    -- Поиск v_u_4
     for _, obj in pairs(getgc(true)) do
         if type(obj) == "table" and not getmetatable(obj) and obj.event and obj.func and type(obj.event) == "number" and type(obj.func) == "number" then
             ThrowSilent.State.V_U_4 = obj
@@ -643,7 +643,6 @@ local function initializeThrowSilent()
                     local throwRadius = getThrowRadius(equippedTool)
                     local nearestPlayer = getNearestPlayer(throwRadius)
                     if nearestPlayer then
-                        -- Дополнительная проверка перед броском
                         local friendsList = Core.Services.FriendsList or {}
                         if nearestPlayer.Name and friendsList[nearestPlayer.Name] then
                             if debugMode then
@@ -690,7 +689,6 @@ local function initializeThrowSilent()
                 local throwRadius = getThrowRadius(equippedTool)
                 local nearestPlayer = getNearestPlayer(throwRadius)
                 if nearestPlayer then
-                    -- Дополнительная проверка перед любыми действиями
                     local friendsList = Core.Services.FriendsList or {}
                     if nearestPlayer.Name and friendsList[nearestPlayer.Name] then
                         if debugMode then
@@ -748,7 +746,6 @@ local function hookFireServer()
                 local attackRadius = getAttackRadius(equippedTool)
                 local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
                 if nearestPlayer1 then
-                    -- Дополнительная проверка перед атакой
                     local friendsList = Core.Services.FriendsList or {}
                     if nearestPlayer1.Name and friendsList[nearestPlayer1.Name] then
                         if debugMode then
@@ -848,7 +845,6 @@ end
 local function setupUI()
     if not UI or not UI.Sections then return end
 
-    -- Настройка KillAura
     if UI.Sections.KillAura then
         UI.Sections.KillAura:Header({ Name = "KillAura" })
         UI.Sections.KillAura:Toggle({
@@ -1034,7 +1030,6 @@ local function setupUI()
         })
     end
 
-    -- Настройка ThrowSilent
     if UI.Sections.ThrowableSilent then
         UI.Sections.ThrowableSilent:Header({ Name = "Throwable Silent" })
         UI.Sections.ThrowableSilent:Toggle({
@@ -1120,20 +1115,17 @@ local function setupUI()
     end
 end
 
--- Функция инициализации модуля
 local function Init(ui, core, notificationFunc)
     UI = ui
     Core = core
     notify = notificationFunc
 
-    -- Инициализация сервисов из переданного Core
     Players = Core.Services.Players
     Workspace = Core.Services.Workspace
     TweenService = Core.Services.TweenService
     RunService = Core.Services.RunService
     ReplicatedStorage = Core.Services.ReplicatedStorage
 
-    -- Инициализация LocalPlayer
     LocalPlayer = Core.PlayerData.LocalPlayer
     if LocalPlayer then
         LocalPlayer.CharacterAdded:Connect(function(character)
@@ -1180,7 +1172,6 @@ local function Init(ui, core, notificationFunc)
                 local attackRadius = getAttackRadius(equippedTool)
                 local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
                 
-                -- Проверяем, изменился ли FriendsList, и сбрасываем LastTarget, если изменился
                 local friendsList = Core.Services.FriendsList or {}
                 if KillAura.State.LastFriendsList ~= friendsList then
                     if debugMode then
@@ -1191,7 +1182,6 @@ local function Init(ui, core, notificationFunc)
                 end
                 
                 if nearestPlayer1 then
-                    -- Дополнительная проверка перед любыми действиями
                     if nearestPlayer1.Name and friendsList[nearestPlayer1.Name] then
                         if debugMode then
                             print("[KillAura Debug] RenderStepped: Skipping nearestPlayer1 (in FriendsList):", nearestPlayer1.Name)
