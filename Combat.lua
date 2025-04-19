@@ -79,6 +79,7 @@ local PREDICT_DISTANCE_FACTOR = 0.005
 
 -- KillAura Functions
 local function getEquippedTool()
+    if not Core or not Core.Services or not Core.PlayerData or not Core.PlayerData.LocalPlayer then return nil end
     local character = Core.Services.Workspace:FindFirstChild(Core.PlayerData.LocalPlayer.Name)
     if not character then return nil end
     for _, child in pairs(character:GetChildren()) do
@@ -116,6 +117,7 @@ local function isVisible(targetRoot)
     end
     lastRaycastTime = currentTime
 
+    if not Core or not Core.PlayerData or not Core.PlayerData.LocalPlayer then return false end
     local myRoot = Core.PlayerData.LocalPlayer.Character and Core.PlayerData.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not myRoot then return false end
     rayCheck.FilterDescendantsInstances = {Core.PlayerData.LocalPlayer.Character, targetRoot.Parent}
@@ -131,6 +133,7 @@ local function isSafeZoneProtected(player)
 end
 
 local function getNearestPlayers(attackRadius)
+    if not Core or not Core.PlayerData or not Core.PlayerData.LocalPlayer then return nil, nil end
     local character = Core.PlayerData.LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then 
         return nil, nil 
@@ -139,23 +142,28 @@ local function getNearestPlayers(attackRadius)
     local rootPart = character.HumanoidRootPart
     local nearestPlayers = {}
     local shortestDistance1 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
+    local fovAngle = KillAura.Settings.MultiFOV.Value
     
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player ~= Core.PlayerData.LocalPlayer then
-            if not (Core.FriendsList and table.find(Core.FriendsList, player.Name)) then
-                local targetChar = player.Character
-                if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-                    local targetRoot = targetChar.HumanoidRootPart
-                    local distance = (rootPart.Position - targetRoot.Position).Magnitude
-                    
-                    if distance <= shortestDistance1 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
-                        rayCheck.FilterDescendantsInstances = {character, targetChar}
-                        local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
-                        if not raycastResult then
-                            table.insert(nearestPlayers, { Player = player, Distance = distance })
-                            shortestDistance1 = distance
-                        end
-                    end
+        if player == Core.PlayerData.LocalPlayer then
+            continue
+        end
+
+        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then
+            continue
+        end
+
+        local targetChar = player.Character
+        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+            local targetRoot = targetChar.HumanoidRootPart
+            local distance = (rootPart.Position - targetRoot.Position).Magnitude
+            
+            if distance <= shortestDistance1 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
+                rayCheck.FilterDescendantsInstances = {character, targetChar}
+                local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
+                if not raycastResult then
+                    table.insert(nearestPlayers, { Player = player, Distance = distance })
+                    shortestDistance1 = distance
                 end
             end
         end
@@ -170,21 +178,25 @@ local function getNearestPlayers(attackRadius)
     local shortestDistance2 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
     
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player ~= Core.PlayerData.LocalPlayer and player ~= nearestPlayer1 then
-            if not (Core.FriendsList and table.find(Core.FriendsList, player.Name)) then
-                local targetChar = player.Character
-                if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-                    local targetRoot = targetChar.HumanoidRootPart
-                    local distance = (rootPart.Position - targetRoot.Position).Magnitude
-                    
-                    if distance <= shortestDistance2 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
-                        rayCheck.FilterDescendantsInstances = {character, targetChar}
-                        local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
-                        if not raycastResult then
-                            nearestPlayer2 = player
-                            shortestDistance2 = distance
-                        end
-                    end
+        if player == Core.PlayerData.LocalPlayer or player == nearestPlayer1 then
+            continue
+        end
+
+        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then
+            continue
+        end
+
+        local targetChar = player.Character
+        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+            local targetRoot = targetChar.HumanoidRootPart
+            local distance = (rootPart.Position - targetRoot.Position).Magnitude
+            
+            if distance <= shortestDistance2 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
+                rayCheck.FilterDescendantsInstances = {character, targetChar}
+                local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
+                if not raycastResult then
+                    nearestPlayer2 = player
+                    shortestDistance2 = distance
                 end
             end
         end
@@ -198,10 +210,12 @@ local function lookAtTarget(target, isSnap, isMultiSnapSecondTarget)
         return 
     end
 
-    if Core.FriendsList and target and table.find(Core.FriendsList, target.Name) then
+    if not Core or not Core.FriendsList or not target then return end
+    if Core.FriendsList and table.find(Core.FriendsList, target.Name) then
         return
     end
 
+    if not Core.PlayerData or not Core.PlayerData.LocalPlayer then return end
     local character = Core.PlayerData.LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then 
         return 
@@ -217,10 +231,14 @@ local function lookAtTarget(target, isSnap, isMultiSnapSecondTarget)
     local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(direction.X, 0, direction.Z))
     
     if isSnap or KillAura.Settings.LookAtMethod.Value == "Snap" then
-        Core.Services.TweenService:Create(rootPart, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {CFrame = targetCFrame}):Play()
+        if Core.Services and Core.Services.TweenService then
+            Core.Services.TweenService:Create(rootPart, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {CFrame = targetCFrame}):Play()
+        end
     elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" and isMultiSnapSecondTarget then
         rootPart.CFrame = targetCFrame
-        Core.Services.TweenService:Create(rootPart, TweenInfo.new(0.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {CFrame = targetCFrame}):Play()
+        if Core.Services and Core.Services.TweenService then
+            Core.Services.TweenService:Create(rootPart, TweenInfo.new(0.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {CFrame = targetCFrame}):Play()
+        end
     else
         rootPart.CFrame = targetCFrame
     end
@@ -230,16 +248,30 @@ local function predictTargetPosition(target, partKey, beamKey)
     if not KillAura.Settings.Predict.Value then
         if KillAura.State[partKey] then KillAura.State[partKey]:Destroy() KillAura.State[partKey] = nil end
         if KillAura.State[beamKey] then KillAura.State[beamKey]:Destroy() KillAura.State[beamKey] = nil end
-        return Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame
+        if Core and Core.PlayerData and Core.PlayerData.LocalPlayer and Core.PlayerData.LocalPlayer.Character then
+            return Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame
+        end
+        return CFrame.new()
     end
     
+    if not Core or not Core.PlayerData or not Core.PlayerData.LocalPlayer then return CFrame.new() end
     local character = Core.PlayerData.LocalPlayer.Character
     local targetChar = target.Character
-    if not character or not targetChar then return character.HumanoidRootPart.CFrame end
+    if not character or not targetChar then 
+        if character and character.HumanoidRootPart then
+            return character.HumanoidRootPart.CFrame
+        end
+        return CFrame.new()
+    end
     
     local myRoot = character:FindFirstChild("HumanoidRootPart")
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot or not targetRoot then return myRoot.CFrame end
+    if not myRoot or not targetRoot then 
+        if myRoot then
+            return myRoot.CFrame
+        end
+        return CFrame.new()
+    end
     
     local velocity = targetRoot.Velocity
     local speed = velocity.Magnitude
@@ -256,7 +288,9 @@ local function predictTargetPosition(target, partKey, beamKey)
             KillAura.State[partKey].Anchored = true
             KillAura.State[partKey].CanCollide = false
             KillAura.State[partKey].Transparency = 0.5
-            KillAura.State[partKey].Parent = Core.Services.Workspace
+            if Core and Core.Services then
+                KillAura.State[partKey].Parent = Core.Services.Workspace
+            end
         end
         KillAura.State[partKey].Position = predictedPosition
         local colorT = math.clamp(distance / 20, 0, 1)
@@ -269,7 +303,9 @@ local function predictTargetPosition(target, partKey, beamKey)
             KillAura.State[beamKey].Width1 = 0.2
             KillAura.State[beamKey].Transparency = NumberSequence.new(0.5)
             KillAura.State[beamKey].Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
-            KillAura.State[beamKey].Parent = Core.Services.Workspace
+            if Core and Core.Services then
+                KillAura.State[beamKey].Parent = Core.Services.Workspace
+            end
             local attachment0 = Instance.new("Attachment", myRoot)
             local attachment1 = Instance.new("Attachment", KillAura.State[partKey])
             KillAura.State[beamKey].Attachment0 = attachment0
@@ -282,6 +318,7 @@ local function predictTargetPosition(target, partKey, beamKey)
 end
 
 local function initializeTargetStrafe()
+    if not Core or not Core.PlayerData or not Core.PlayerData.LocalPlayer then return end
     if KillAura.Settings.TargetStrafe.Value then
         local success, moduleResult = pcall(function()
             return require(Core.PlayerData.LocalPlayer.PlayerScripts.PlayerModule).controls
@@ -360,6 +397,7 @@ end
 
 -- ThrowSilent Functions
 local function getEquippedToolThrowSilent()
+    if not Core or not Core.Services or not Core.PlayerData or not Core.PlayerData.LocalPlayer then return nil end
     local character = Core.Services.Workspace:FindFirstChild(Core.PlayerData.LocalPlayer.Name)
     if not character then return nil end
     
@@ -396,6 +434,7 @@ local function getNearestPlayer(throwRadius)
     end
     lastTargetUpdate = currentTime
 
+    if not Core or not Core.PlayerData or not Core.PlayerData.LocalPlayer then return nil end
     local character = Core.PlayerData.LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then 
         return nil 
@@ -406,18 +445,17 @@ local function getNearestPlayer(throwRadius)
     local shortestDistance = throwRadius
     
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player ~= Core.PlayerData.LocalPlayer then
-            if not (Core.FriendsList and table.find(Core.FriendsList, player.Name)) then
-                local targetChar = player.Character
-                if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-                    local targetRoot = targetChar.HumanoidRootPart
-                    local distance = (rootPart.Position - targetRoot.Position).Magnitude
-                    
-                    if distance <= shortestDistance and targetChar.Humanoid.Health > 0 then
-                        shortestDistance = distance
-                        nearestPlayer = player
-                    end
-                end
+        if player == Core.PlayerData.LocalPlayer then continue end
+        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then continue end
+
+        local targetChar = player.Character
+        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+            local targetRoot = targetChar.HumanoidRootPart
+            local distance = (rootPart.Position - targetRoot.Position).Magnitude
+            
+            if distance <= shortestDistance and targetChar.Humanoid.Health > 0 then
+                shortestDistance = distance
+                nearestPlayer = player
             end
         end
     end
@@ -431,10 +469,12 @@ local function lookAtTargetThrowSilent(target)
         return 
     end
 
-    if Core.FriendsList and target and table.find(Core.FriendsList, target.Name) then
+    if not Core or not Core.FriendsList or not target then return end
+    if Core.FriendsList and table.find(Core.FriendsList, target.Name) then
         return
     end
     
+    if not Core.PlayerData or not Core.PlayerData.LocalPlayer then return end
     local character = Core.PlayerData.LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") then 
         return 
@@ -456,15 +496,24 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
     if not ThrowSilent.Settings.Predict.Value then
         if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-        return {position = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.Position, direction = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector}
+        if Core and Core.PlayerData and Core.PlayerData.LocalPlayer and Core.PlayerData.LocalPlayer.Character then
+            return {position = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.Position, direction = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector}
+        end
+        return {position = Vector3.new(), direction = Vector3.new()}
     end
     
+    if not Core or not Core.PlayerData or not Core.PlayerData.LocalPlayer then 
+        return {position = Vector3.new(), direction = Vector3.new()}
+    end
     local character = Core.PlayerData.LocalPlayer.Character
     local targetChar = target.Character
     if not character or not targetChar then 
         if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-        return {position = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.Position, direction = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector}
+        if character and character.HumanoidRootPart then
+            return {position = character.HumanoidRootPart.Position, direction = character.HumanoidRootPart.CFrame.LookVector}
+        end
+        return {position = Vector3.new(), direction = Vector3.new()}
     end
     
     local myRoot = character:FindFirstChild("HumanoidRootPart")
@@ -473,7 +522,10 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
     if not myRoot or not targetHead or not targetRoot then 
         if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-        return {position = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.Position, direction = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector}
+        if myRoot then
+            return {position = myRoot.Position, direction = myRoot.CFrame.LookVector}
+        end
+        return {position = Vector3.new(), direction = Vector3.new()}
     end
     
     local velocity = targetRoot.Velocity
@@ -499,7 +551,9 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
             ThrowSilent.State.PredictVisualPart.CanCollide = false
             ThrowSilent.State.PredictVisualPart.Transparency = 0.5
             ThrowSilent.State.PredictVisualPart.Color = Color3.fromRGB(0, 255, 0)
-            ThrowSilent.State.PredictVisualPart.Parent = Core.Services.Workspace
+            if Core and Core.Services then
+                ThrowSilent.State.PredictVisualPart.Parent = Core.Services.Workspace
+            end
         end
         ThrowSilent.State.PredictVisualPart.Position = adjustedPosition
         
@@ -510,7 +564,9 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
             ThrowSilent.State.RotationVisualPart.CanCollide = false
             ThrowSilent.State.RotationVisualPart.Transparency = 0.5
             ThrowSilent.State.RotationVisualPart.Color = Color3.fromRGB(255, 0, 0)
-            ThrowSilent.State.RotationVisualPart.Parent = Core.Services.Workspace
+            if Core and Core.Services then
+                ThrowSilent.State.RotationVisualPart.Parent = Core.Services.Workspace
+            end
         end
         local startPos = myRoot.Position + Vector3.new(0, 1.5, 0)
         local endPos = startPos + (adjustedDirection * 5)
@@ -532,11 +588,11 @@ local function checkToolChangeThrowSilent()
             local radius = getThrowRadius(currentTool)
             local baseRange = currentTool:GetAttribute("Range") or ThrowSilent.Constants.DEFAULT_THROW_RADIUS
             local throwSpeed = currentTool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "Throwable Silent", Description = "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. radius .. ", Throw Speed: " .. throwSpeed .. ")", true })
             end
         elseif ThrowSilent.State.LastTool and not currentTool then
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "Throwable Silent", Description = "Unequipped: " .. ThrowSilent.State.LastTool.Name, true })
             end
             if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
@@ -548,7 +604,7 @@ local function checkToolChangeThrowSilent()
             local newRadius = newBaseRange + ThrowSilent.Settings.RangePlus.Value
             local oldThrowSpeed = ThrowSilent.State.LastTool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
             local newThrowSpeed = currentTool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "Throwable Silent", Description = "Switched from " .. ThrowSilent.State.LastTool.Name .. " (Range: " .. oldRadius .. ", Speed: " .. oldThrowSpeed .. ") to " .. currentTool.Name .. " (Range: " .. newRadius .. ", Speed: " .. newThrowSpeed .. ")", true })
             end
         end
@@ -616,6 +672,7 @@ local function initializeThrowSilent()
         ThrowSilent.State.Connection = nil
     end
 
+    if not Core or not Core.Services then return end
     ThrowSilent.State.Connection = Core.Services.RunService.Heartbeat:Connect(function()
         if not ThrowSilent.Settings.Enabled.Value then
             if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
@@ -630,6 +687,7 @@ local function initializeThrowSilent()
             ThrowSilent.State.LastLogTime = currentTime
         end
 
+        if not Core.PlayerData or not Core.PlayerData.LocalPlayer then return end
         local character = Core.PlayerData.LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             local equippedTool = getEquippedToolThrowSilent()
@@ -726,7 +784,7 @@ local function checkToolChange()
             if isMeleeWeapon(currentTool) then
                 local radius = getAttackRadius(currentTool)
                 local baseRange = currentTool:GetAttribute("Range") or KillAura.Settings.DefaultAttackRadius.Value
-                if UI.Window and UI.Window.Notify then
+                if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. radius .. ")", true })
                 else
                     warn("Notification failed: UI.Window or Notify is nil")
@@ -734,7 +792,7 @@ local function checkToolChange()
                 KillAura.State.LastTool = currentTool
             end
         elseif KillAura.State.LastTool and not currentTool then
-            if UI.Window and UI.Window.Notify then
+            if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "KillAura", Description = "Unequipped: " .. KillAura.State.LastTool.Name, true })
             else
                 warn("Notification failed: UI.Window or Notify is nil")
@@ -748,14 +806,14 @@ local function checkToolChange()
             if isMeleeWeapon(currentTool) then
                 local oldRadius = getAttackRadius(KillAura.State.LastTool)
                 local newRadius = getAttackRadius(currentTool)
-                if UI.Window and UI.Window.Notify then
+                if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Switched from " .. KillAura.State.LastTool.Name .. " (Range: " .. oldRadius .. ") to " .. currentTool.Name .. " (Range: " .. newRadius .. ")", true })
                 else
                     warn("Notification failed: UI.Window or Notify is nil")
                 end
                 KillAura.State.LastTool = currentTool
             else
-                if UI.Window and UI.Window.Notify then
+                if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Unequipped: " .. KillAura.State.LastTool.Name, true })
                 else
                     warn("Notification failed: UI.Window or Notify is nil")
@@ -771,6 +829,7 @@ local function checkToolChange()
 end
 
 local function setupConnections()
+    if not Core or not Core.Services then return end
     local connection
     connection = Core.Services.RunService.RenderStepped:Connect(function()
         if not KillAura.Settings.Enabled.Value then
@@ -786,6 +845,7 @@ local function setupConnections()
         local currentTime = tick()
         checkToolChange()
         
+        if not Core.PlayerData or not Core.PlayerData.LocalPlayer then return end
         local character = Core.PlayerData.LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             local equippedTool = getEquippedTool()
@@ -843,33 +903,39 @@ local function setupConnections()
         end
     end)
 
-    Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(character)
-        character:WaitForChild("HumanoidRootPart")
-        KillAura.State.StrafeAngle = 0
-        KillAura.State.StrafeVector = nil
-        KillAura.State.LastTarget = nil
-        KillAura.State.LastTool = nil
-        KillAura.State.CurrentTargetIndex = 1
-        KillAura.State.LastSwitchTime = 0
-        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
-        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
-        if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
-        if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-        ThrowSilent.State.LastTool = nil
-        if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
-        if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-    end)
+    if Core.PlayerData and Core.PlayerData.LocalPlayer then
+        Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(character)
+            character:WaitForChild("HumanoidRootPart")
+            KillAura.State.StrafeAngle = 0
+            KillAura.State.StrafeVector = nil
+            KillAura.State.LastTarget = nil
+            KillAura.State.LastTool = nil
+            KillAura.State.CurrentTargetIndex = 1
+            KillAura.State.LastSwitchTime = 0
+            if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+            if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
+            if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+            if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+            ThrowSilent.State.LastTool = nil
+            if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
+            if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
+        end)
+    end
 end
 
 local function setupUI()
-    if UI.Sections and UI.Sections.KillAura then
+    if not UI or not UI.Sections then return end
+
+    if UI.Sections.KillAura then
         UI.Sections.KillAura:Header({ Name = "KillAura" })
         UI.Sections.KillAura:Toggle({
             Name = "Enabled",
             Default = KillAura.Settings.Enabled.Default,
             Callback = function(value)
                 KillAura.Settings.Enabled.Value = value
-                notify("KillAura", "KillAura " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("KillAura", "KillAura " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.KillAura:Dropdown({
@@ -878,7 +944,9 @@ local function setupUI()
             Options = {"Single", "Multi"},
             Callback = function(value)
                 KillAura.Settings.SendMethod.Value = value
-                notify("KillAura", "Send Method set to: " .. value, true)
+                if notify then
+                    notify("KillAura", "Send Method set to: " .. value, true)
+                end
             end
         })
         UI.Sections.KillAura:Slider({
@@ -890,7 +958,9 @@ local function setupUI()
             Precision = 0,
             Callback = function(value)
                 KillAura.Settings.MultiFOV.Value = value
-                notify("KillAura", "Multi FOV set to: " .. value .. " degrees")
+                if notify then
+                    notify("KillAura", "Multi FOV set to: " .. value .. " degrees")
+                end
             end
         })
         UI.Sections.KillAura:Toggle({
@@ -898,7 +968,9 @@ local function setupUI()
             Default = KillAura.Settings.VisibleCheck.Default,
             Callback = function(value)
                 KillAura.Settings.VisibleCheck.Value = value
-                notify("KillAura", "Visible Check " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("KillAura", "Visible Check " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.KillAura:Toggle({
@@ -906,7 +978,9 @@ local function setupUI()
             Default = KillAura.Settings.LookAtTarget.Default,
             Callback = function(value)
                 KillAura.Settings.LookAtTarget.Value = value
-                notify("KillAura", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("KillAura", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.KillAura:Dropdown({
@@ -915,7 +989,9 @@ local function setupUI()
             Options = {"Snap", "AlwaysAim", "MultiAim", "MultiSnapAim"},
             Callback = function(value)
                 KillAura.Settings.LookAtMethod.Value = value
-                notify("KillAura", "Look At Method set to: " .. value, true)
+                if notify then
+                    notify("KillAura", "Look At Method set to: " .. value, true)
+                end
             end
         })
         UI.Sections.KillAura:Toggle({
@@ -923,7 +999,9 @@ local function setupUI()
             Default = KillAura.Settings.Predict.Default,
             Callback = function(value)
                 KillAura.Settings.Predict.Value = value
-                notify("KillAura", "Predict " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("KillAura", "Predict " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.KillAura:Toggle({
@@ -931,7 +1009,9 @@ local function setupUI()
             Default = KillAura.Settings.PredictVisualisation.Default,
             Callback = function(value)
                 KillAura.Settings.PredictVisualisation.Value = value
-                notify("KillAura", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("KillAura", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.KillAura:Toggle({
@@ -940,7 +1020,9 @@ local function setupUI()
             Callback = function(value)
                 KillAura.Settings.TargetStrafe.Value = value
                 initializeTargetStrafe()
-                notify("KillAura", "Target Strafe " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("KillAura", "Target Strafe " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.KillAura:Slider({
@@ -952,7 +1034,9 @@ local function setupUI()
             Precision = 1,
             Callback = function(value)
                 KillAura.Settings.AttackDelay.Value = value
-                notify("KillAura", "Attack Delay set to: " .. value)
+                if notify then
+                    notify("KillAura", "Attack Delay set to: " .. value)
+                end
             end
         })
         UI.Sections.KillAura:Slider({
@@ -964,7 +1048,9 @@ local function setupUI()
             Precision = 0,
             Callback = function(value)
                 KillAura.Settings.RangePlus.Value = value
-                notify("KillAura", "Range Plus set to: " .. value)
+                if notify then
+                    notify("KillAura", "Range Plus set to: " .. value)
+                end
             end
         })
         UI.Sections.KillAura:Slider({
@@ -975,8 +1061,10 @@ local function setupUI()
             DisplayMethod = "Value",
             Precision = 0,
             Callback = function(value)
-                KillAura.Settings.DefaultAttackRadius.Value = value
-                notify("KillAura", "Default Attack Radius set to: " .. value)
+                KillAura.Settings.DefaultAttackRadius.Value = tostring(value)
+                if notify then
+                    notify("KillAura", "Default Attack Radius set to: " .. value)
+                end
             end
         })
         UI.Sections.KillAura:Slider({
@@ -988,7 +1076,9 @@ local function setupUI()
             Precision = 0,
             Callback = function(value)
                 KillAura.Settings.SearchRange.Value = value
-                notify("KillAura", "Search Range set to: " .. value)
+                if notify then
+                    notify("KillAura", "Search Range set to: " .. value)
+                end
             end
         })
         UI.Sections.KillAura:Slider({
@@ -1000,7 +1090,9 @@ local function setupUI()
             Precision = 0,
             Callback = function(value)
                 KillAura.Settings.StrafeRange.Value = value
-                notify("KillAura", "Strafe Range set to: " .. value)
+                if notify then
+                    notify("KillAura", "Strafe Range set to: " .. value)
+                end
             end
         })
         UI.Sections.KillAura:Slider({
@@ -1012,12 +1104,14 @@ local function setupUI()
             Precision = 0,
             Callback = function(value)
                 KillAura.Settings.YFactor.Value = value
-                notify("KillAura", "Y Factor set to: " .. value .. "%")
+                if notify then
+                    notify("KillAura", "Y Factor set to: " .. value .. "%")
+                end
             end
         })
     end
 
-    if UI.Sections and UI.Sections.ThrowableSilent then
+    if UI.Sections.ThrowableSilent then
         UI.Sections.ThrowableSilent:Header({ Name = "Throwable Silent" })
         UI.Sections.ThrowableSilent:Toggle({
             Name = "Enabled",
@@ -1025,7 +1119,9 @@ local function setupUI()
             Callback = function(value)
                 ThrowSilent.Settings.Enabled.Value = value
                 initializeThrowSilent()
-                notify("Throwable Silent", "Throwable Silent " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("Throwable Silent", "Throwable Silent " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.ThrowableSilent:Slider({
@@ -1037,7 +1133,9 @@ local function setupUI()
             Precision = 1,
             Callback = function(value)
                 ThrowSilent.Settings.ThrowDelay.Value = value
-                notify("Throwable Silent", "Throw Delay set to: " .. value)
+                if notify then
+                    notify("Throwable Silent", "Throw Delay set to: " .. value)
+                end
             end
         })
         UI.Sections.ThrowableSilent:Slider({
@@ -1049,7 +1147,9 @@ local function setupUI()
             Precision = 0,
             Callback = function(value)
                 ThrowSilent.Settings.RangePlus.Value = value
-                notify("Throwable Silent", "Range Plus set to: " .. value)
+                if notify then
+                    notify("Throwable Silent", "Range Plus set to: " .. value)
+                end
             end
         })
         UI.Sections.ThrowableSilent:Toggle({
@@ -1057,7 +1157,9 @@ local function setupUI()
             Default = ThrowSilent.Settings.LookAtTarget.Default,
             Callback = function(value)
                 ThrowSilent.Settings.LookAtTarget.Value = value
-                notify("Throwable Silent", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("Throwable Silent", "Look At Target " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.ThrowableSilent:Toggle({
@@ -1065,7 +1167,9 @@ local function setupUI()
             Default = ThrowSilent.Settings.Predict.Default,
             Callback = function(value)
                 ThrowSilent.Settings.Predict.Value = value
-                notify("Throwable Silent", "Predict " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("Throwable Silent", "Predict " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.ThrowableSilent:Toggle({
@@ -1073,7 +1177,9 @@ local function setupUI()
             Default = ThrowSilent.Settings.PredictVisualisation.Default,
             Callback = function(value)
                 ThrowSilent.Settings.PredictVisualisation.Value = value
-                notify("Throwable Silent", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("Throwable Silent", "Predict Visualisation " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
         UI.Sections.ThrowableSilent:Toggle({
@@ -1082,7 +1188,9 @@ local function setupUI()
             Callback = function(value)
                 ThrowSilent.Settings.Rage.Value = value
                 initializeThrowSilent()
-                notify("Throwable Silent", "Rage " .. (value and "Enabled" or "Disabled"), true)
+                if notify then
+                    notify("Throwable Silent", "Rage " .. (value and "Enabled" or "Disabled"), true)
+                end
             end
         })
     end
@@ -1095,8 +1203,10 @@ local function Init(ui, core, notificationFunc)
     notify = notificationFunc
 
     -- Add KillAura and ThrowableSilent sections to the Combat tab
-    UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
-    UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
+    if UI and UI.Tabs and UI.Tabs.Combat then
+        UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
+        UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
+    end
 
     -- Setup UI elements
     setupUI()
