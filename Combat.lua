@@ -211,19 +211,19 @@ local function getNearestPlayers(attackRadius)
     local shortestDistance2 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
     
     for _, player in pairs(validPlayers) do
-        if player == nearestPlayer1 then continue end
-
-        local targetChar = player.Character
-        if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
-            local targetRoot = targetChar.HumanoidRootPart
-            local distance = (rootPart.Position - targetRoot.Position).Magnitude
-            
-            if distance <= shortestDistance2 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
-                rayCheck.FilterDescendantsInstances = {LocalCharacter, targetChar}
-                local raycastResult = Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
-                if not raycastResult then
-                    nearestPlayer2 = player
-                    shortestDistance2 = distance
+        if player ~= nearestPlayer1 then -- Заменяем continue на условную проверку
+            local targetChar = player.Character
+            if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
+                local targetRoot = targetChar.HumanoidRootPart
+                local distance = (rootPart.Position - targetRoot.Position).Magnitude
+                
+                if distance <= shortestDistance2 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
+                    rayCheck.FilterDescendantsInstances = {LocalCharacter, targetChar}
+                    local raycastResult = Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
+                    if not raycastResult then
+                        nearestPlayer2 = player
+                        shortestDistance2 = distance
+                    end
                 end
             end
         end
@@ -1139,7 +1139,7 @@ local function Init(ui, core, notificationFunc)
         KillAura.State.StrafeVector = nil
         KillAura.State.LastTarget = nil
         KillAura.State.LastTool = nil
-        Kill{}]Aura.State.CurrentTargetIndex = 1
+        KillAura.State.CurrentTargetIndex = 1
         KillAura.State.LastSwitchTime = 0
         if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
         if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
