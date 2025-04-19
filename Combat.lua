@@ -67,7 +67,9 @@ local ThrowSilent = {
         LastThrowTime = 0,
         V_U_4 = nil,
         Connection = nil,
-        OldFireServer = nil
+        OldFireServer = nil,
+        LastTarget = nil, -- Добавляем для проверки изменений FriendsList
+        LastFriendsList = nil
     },
     Constants = {
         DEFAULT_THROW_RADIUS = 20,
@@ -381,16 +383,18 @@ end
 
 local lastTargetUpdate = 0
 local targetUpdateInterval = 0.5
-local cachedTarget = nil
 
 local function getNearestPlayer(throwRadius)
     local currentTime = tick()
-    if currentTime - lastTargetUpdate < targetUpdateInterval and cachedTarget and cachedTarget.Character and cachedTarget.Character.Humanoid and cachedTarget.Character.Humanoid.Health > 0 then
+    if currentTime - lastTargetUpdate < targetUpdateInterval and ThrowSilent.State.LastTarget and ThrowSilent.State.LastTarget.Character and ThrowSilent.State.LastTarget.Character.Humanoid and ThrowSilent.State.LastTarget.Character.Humanoid.Health > 0 then
         local friendsList = Core.Services.FriendsList or {}
-        if cachedTarget.Name and friendsList[cachedTarget.Name] then
+        -- Проверяем, не добавили ли цель в FriendsList
+        if ThrowSilent.State.LastFriendsList ~= friendsList or (ThrowSilent.State.LastTarget.Name and friendsList[ThrowSilent.State.LastTarget.Name]) then
+            ThrowSilent.State.LastTarget = nil
+            ThrowSilent.State.LastFriendsList = friendsList
             return nil
         end
-        return cachedTarget
+        return ThrowSilent.State.LastTarget
     end
     lastTargetUpdate = currentTime
 
@@ -418,7 +422,8 @@ local function getNearestPlayer(throwRadius)
         end
     end
     
-    cachedTarget = nearestPlayer
+    ThrowSilent.State.LastTarget = nearestPlayer
+    ThrowSilent.State.LastFriendsList = friendsList
     return nearestPlayer
 end
 
@@ -586,6 +591,10 @@ local function initializeThrowSilent()
                     local throwRadius = getThrowRadius(equippedTool)
                     local nearestPlayer = getNearestPlayer(throwRadius)
                     if nearestPlayer then
+                        -- Дополнительная проверка перед броском
+                        local friendsList = Core.Services.FriendsList or {}
+                        if nearestPlayer.Name and friendsList[nearestPlayer.Name] then return ThrowSilent.State.OldFireServer(self, ...) end
+
                         lookAtTargetThrowSilent(nearestPlayer)
                         local throwSpeed = getThrowSpeed(equippedTool)
                         local prediction = predictTargetPositionAndRotation(nearestPlayer, throwSpeed)
@@ -624,6 +633,14 @@ local function initializeThrowSilent()
                 local throwRadius = getThrowRadius(equippedTool)
                 local nearestPlayer = getNearestPlayer(throwRadius)
                 if nearestPlayer then
+                    -- Дополнительная проверка перед любыми действиями
+                    local friendsList = Core.Services.FriendsList or {}
+                    if nearestPlayer.Name and friendsList[nearestPlayer.Name] then
+                        if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
+                        if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
+                        return
+                    end
+
                     lookAtTargetThrowSilent(nearestPlayer)
                     local throwSpeed = getThrowSpeed(equippedTool)
                     local prediction = predictTargetPositionAndRotation(nearestPlayer, throwSpeed)
@@ -671,6 +688,11 @@ local function hookFireServer()
                 local attackRadius = getAttackRadius(equippedTool)
                 local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
                 if nearestPlayer1 then
+                    -- Дополнительная проверка перед атакой
+                    local friendsList = Core.Services.FriendsList or {}
+                    if nearestPlayer1.Name and friendsList[nearestPlayer1.Name] then return oldFireServer(self, ...) end
+                    if nearestPlayer2 and nearestPlayer2.Name and friendsList[nearestPlayer2.Name] then nearestPlayer2 = nil end
+
                     if KillAura.Settings.SendMethod.Value == "Single" then
                         args[3] = equippedTool
                         args[4] = {nearestPlayer1}
@@ -1089,45 +1111,65 @@ local function Init(ui, core, notificationFunc)
                 local nearestPlayer1, nearestPlayer2 = getNearestPlayers(attackRadius)
                 
                 if nearestPlayer1 then
-                    predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
-                    if nearestPlayer2 then
-                        predictTargetPosition(nearestPlayer2, "PredictVisualPart2", "PredictBeam2")
+                    -- Дополнительная проверка перед любыми действиями
+                    local friendsList = Core.Services.FriendsList or {}
+                    if nearestPlayer1.Name and friendsList[nearestPlayer1.Name] then
+                        nearestPlayer1 = nil
+                        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+                        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
+                    end
+                    if nearestPlayer2 and nearestPlayer2.Name and friendsList[nearestPlayer2.Name] then
+                        nearestPlayer2 = nil
+                        if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+                        if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+                    end
+
+                    if nearestPlayer1 then
+                        predictTargetPosition(nearestPlayer1, "PredictVisualPart1", "PredictBeam1")
+                        if nearestPlayer2 then
+                            predictTargetPosition(nearestPlayer2, "PredictVisualPart2", "PredictBeam2")
+                        else
+                            if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
+                            if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
+                        end
+                        
+                        if KillAura.Settings.LookAtTarget.Value then
+                            if KillAura.Settings.LookAtMethod.Value == "AlwaysAim" then
+                                lookAtTarget(nearestPlayer1, false)
+                            elseif KillAura.Settings.LookAtMethod.Value == "MultiAim" then
+                                local targets = {}
+                                if nearestPlayer1 then table.insert(targets, nearestPlayer1) end
+                                if nearestPlayer2 then table.insert(targets, nearestPlayer2) end
+                                
+                                if #targets > 0 then
+                                    if currentTime - KillAura.State.LastSwitchTime >= 0.1 then
+                                        KillAura.State.CurrentTargetIndex = KillAura.State.CurrentTargetIndex + 1
+                                        if KillAura.State.CurrentTargetIndex > #targets then
+                                            KillAura.State.CurrentTargetIndex = 1
+                                        end
+                                        KillAura.State.LastSwitchTime = currentTime
+                                    end
+                                    lookAtTarget(targets[KillAura.State.CurrentTargetIndex], false)
+                                end
+                            elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
+                                lookAtTarget(nearestPlayer1, false)
+                            end
+                        end
                     else
+                        if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
+                        if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
                         if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
                         if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
                     end
                     
-                    if KillAura.Settings.LookAtTarget.Value then
-                        if KillAura.Settings.LookAtMethod.Value == "AlwaysAim" then
-                            lookAtTarget(nearestPlayer1, false)
-                        elseif KillAura.Settings.LookAtMethod.Value == "MultiAim" then
-                            local targets = {}
-                            if nearestPlayer1 then table.insert(targets, nearestPlayer1) end
-                            if nearestPlayer2 then table.insert(targets, nearestPlayer2) end
-                            
-                            if #targets > 0 then
-                                if currentTime - KillAura.State.LastSwitchTime >= 0.1 then
-                                    KillAura.State.CurrentTargetIndex = KillAura.State.CurrentTargetIndex + 1
-                                    if KillAura.State.CurrentTargetIndex > #targets then
-                                        KillAura.State.CurrentTargetIndex = 1
-                                    end
-                                    KillAura.State.LastSwitchTime = currentTime
-                                end
-                                lookAtTarget(targets[KillAura.State.CurrentTargetIndex], false)
-                            end
-                        elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" then
-                            lookAtTarget(nearestPlayer1, false)
-                        end
+                    if nearestPlayer1 and currentTime - KillAura.State.LastAttackTime >= KillAura.Settings.AttackDelay.Value then
+                        KillAura.State.LastAttackTime = currentTime
                     end
                 else
                     if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
                     if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
                     if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
                     if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
-                end
-                
-                if nearestPlayer1 and currentTime - KillAura.State.LastAttackTime >= KillAura.Settings.AttackDelay.Value then
-                    KillAura.State.LastAttackTime = currentTime
                 end
             else
                 if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
@@ -1153,6 +1195,8 @@ local function Init(ui, core, notificationFunc)
             if KillAura.State.PredictVisualPart2 then KillAura.State.PredictVisualPart2:Destroy() KillAura.State.PredictVisualPart2 = nil end
             if KillAura.State.PredictBeam2 then KillAura.State.PredictBeam2:Destroy() KillAura.State.PredictBeam2 = nil end
             ThrowSilent.State.LastTool = nil
+            ThrowSilent.State.LastTarget = nil
+            ThrowSilent.State.LastFriendsList = nil
             if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
             if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
         end)
