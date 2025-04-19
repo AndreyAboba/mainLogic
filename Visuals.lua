@@ -571,13 +571,13 @@ function Visuals.Init(UI, Core, notify)
 
                     local isFriend = esp.LastIsFriend
                     if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
-                        isFriend = ESP.Settings.TeamCheck.Value and Core.Services.FriendsList and table.find(Core.Services.FriendsList, player.Name)
+                        isFriend = Core.Services.FriendsList and Core.Services.FriendsList[player.Name:lower()] or false
                         esp.LastIsFriend = isFriend
                         esp.LastFriendsList = Core.Services.FriendsList
                     end
 
-                    local baseColor = isFriend and ESP.Settings.FriendColor.Value or ESP.Settings.EnemyColor.Value
-                    local gradColor1, gradColor2 = ESP.Settings.GradientColor1.Value, isFriend and Color3.fromRGB(0, 255, 0) or ESP.Settings.GradientColor2.Value
+                    local baseColor = (isFriend and ESP.Settings.TeamCheck.Value) and ESP.Settings.FriendColor.Value or ESP.Settings.EnemyColor.Value
+                    local gradColor1, gradColor2 = ESP.Settings.GradientColor1.Value, (isFriend and ESP.Settings.TeamCheck.Value) and Color3.fromRGB(0, 255, 0) or ESP.Settings.GradientColor2.Value
 
                     local topLeft = Vector2.new(rootPos.X - width / 2, headPos.Y)
                     local topRight = Vector2.new(rootPos.X + width / 2, headPos.Y)
