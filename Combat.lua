@@ -76,7 +76,6 @@ function Combat.Init(UI, Core, notify)
     local PREDICT_SPEED_FACTOR = 0.01
     local PREDICT_DISTANCE_FACTOR = 0.005
 
-    -- KillAura Functions
     local function getEquippedTool()
         local character = Core.Services.Workspace:FindFirstChild(Core.PlayerData.LocalPlayer.Name)
         if not character then return nil end
@@ -89,7 +88,11 @@ function Combat.Init(UI, Core, notify)
     local function isMeleeWeapon(tool)
         if not tool then return false end
         if tool.Name:lower() == "fists" then return true end
-        local meleeItem = game:GetService("ReplicatedStorage"):WaitForChild("Items"):WaitForChild("melee"):FindFirstChild(tool.Name)
+        local items = game:GetService("ReplicatedStorage"):FindFirstChild("Items")
+        if not items then return false end
+        local melee = items:FindFirstChild("melee")
+        if not melee then return false end
+        local meleeItem = melee:FindFirstChild(tool.Name)
         return meleeItem ~= nil
     end
 
@@ -361,7 +364,6 @@ function Combat.Init(UI, Core, notify)
         end
     end
 
-    -- ThrowSilent Functions
     local function getEquippedToolThrowSilent()
         local character = Core.Services.Workspace:FindFirstChild(Core.PlayerData.LocalPlayer.Name)
         if not character then return nil end
@@ -965,7 +967,7 @@ function Combat.Init(UI, Core, notify)
             DisplayMethod = "Value",
             Precision = 0,
             Callback = function(value)
-                KillAura.Settings.DefaultAttackRadius.Value = tostring(value)
+                KillAura.Settings.DefaultAttackRadius.Value = value
                 notify("KillAura", "Default Attack Radius set to: " .. value)
             end
         })
