@@ -15,6 +15,7 @@ Core = {
     },
     NotificationCooldown = { LastTime = 0, Delay = 5 }
 }
+print('1')
 
 Core.PlayerData.LocalPlayer = Core.Services.Players.LocalPlayer
 Core.PlayerData.Camera = Core.Services.Workspace.CurrentCamera
