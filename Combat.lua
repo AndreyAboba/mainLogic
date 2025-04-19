@@ -17,9 +17,16 @@ local Core = {
     NotificationCooldown = { LastTime = 0, Delay = 5 }
 }
 
+-- Кэшируем часто используемые сервисы для уменьшения вызовов
+local Players = Core.Services.Players
+local Workspace = Core.Services.Workspace
+local TweenService = Core.Services.TweenService
+local RunService = Core.Services.RunService
+local ReplicatedStorage = Core.Services.ReplicatedStorage
+
 -- Инициализация Core.PlayerData
-Core.PlayerData.LocalPlayer = Core.Services.Players.LocalPlayer
-Core.PlayerData.Camera = Core.Services.Workspace.CurrentCamera
+Core.PlayerData.LocalPlayer = Players.LocalPlayer
+Core.PlayerData.Camera = Workspace.CurrentCamera
 
 -- Переменные для UI и уведомлений
 local UI, Core, notify
@@ -85,13 +92,14 @@ local ThrowSilent = {
         DEFAULT_THROW_RADIUS = 20,
         DEFAULT_THROW_SPEED = 50,
         VALID_TOOLS = {
-            "Bottle", "Bowling Pin", "Brick", "Cinder Block", "Dumbbell Plate", 
-            "Fire Cracker", "Glass", "Grenade", "Jar", "Jerry Can", 
-            "Milkshake", "Molotov", "Mug", "Rock", "Soda Can", "Spray Can"
+            ["Bottle"] = true, ["Bowling Pin"] = true, ["Brick"] = true, ["Cinder Block"] = true, ["Dumbbell Plate"] = true,
+            ["Fire Cracker"] = true, ["Glass"] = true, ["Grenade"] = true, ["Jar"] = true, ["Jerry Can"] = true,
+            ["Milkshake"] = true, ["Molotov"] = true, ["Mug"] = true, ["Rock"] = true, ["Soda Can"] = true, ["Spray Can"] = true
         }
     }
 }
 
+-- Оптимизация: константы для предсказания
 local PREDICT_BASE_AMOUNT = 0.1
 local PREDICT_SPEED_FACTOR = 0.002
 local PREDICT_DISTANCE_FACTOR = 0.01
@@ -101,11 +109,20 @@ local rayCheck = RaycastParams.new()
 rayCheck.RespectCanCollide = true
 rayCheck.FilterType = Enum.RaycastFilterType.Exclude
 
+-- Оптимизация: кэшируем игрока и его персонажа
+local LocalPlayer = Core.PlayerData.LocalPlayer
+local LocalCharacter = nil
+LocalPlayer.CharacterAdded:Connect(function(character)
+    LocalCharacter = character
+end)
+if LocalPlayer.Character then
+    LocalCharacter = LocalPlayer.Character
+end
+
 -- Функции KillAura
 local function getEquippedTool()
-    local character = Core.Services.Workspace:FindFirstChild(Core.PlayerData.LocalPlayer.Name)
-    if not character then return nil end
-    for _, child in pairs(character:GetChildren()) do
+    if not LocalCharacter then return nil end
+    for _, child in pairs(LocalCharacter:GetChildren()) do
         if child.ClassName == "Tool" then return child end
     end
     return nil
@@ -114,7 +131,7 @@ end
 local function isMeleeWeapon(tool)
     if not tool then return false end
     if tool.Name:lower() == "fists" then return true end
-    local meleeItem = game:GetService("ReplicatedStorage"):WaitForChild("Items"):WaitForChild("melee"):FindFirstChild(tool.Name)
+    local meleeItem = ReplicatedStorage:FindFirstChild("Items") and ReplicatedStorage.Items:FindFirstChild("melee") and ReplicatedStorage.Items.melee:FindFirstChild(tool.Name)
     return meleeItem ~= nil
 end
 
@@ -135,10 +152,10 @@ local function isVisible(targetRoot)
     end
     lastRaycastTime = currentTime
 
-    local myRoot = Core.PlayerData.LocalPlayer.Character and Core.PlayerData.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local myRoot = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     if not myRoot then return false end
-    rayCheck.FilterDescendantsInstances = {Core.PlayerData.LocalPlayer.Character, targetRoot.Parent}
-    local raycastResult = Core.Services.Workspace:Raycast(myRoot.Position, (targetRoot.Position - myRoot.Position), rayCheck)
+    rayCheck.FilterDescendantsInstances = {LocalCharacter, targetRoot.Parent}
+    local raycastResult = Workspace:Raycast(myRoot.Position, (targetRoot.Position - myRoot.Position), rayCheck)
     cachedVisibility[targetRoot] = not raycastResult
     return cachedVisibility[targetRoot]
 end
@@ -150,33 +167,33 @@ local function isSafeZoneProtected(player)
 end
 
 local function getNearestPlayers(attackRadius)
-    local character = Core.PlayerData.LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then 
+    if not LocalCharacter or not LocalCharacter:FindFirstChild("HumanoidRootPart") then 
         return nil, nil 
     end
     
-    local rootPart = character.HumanoidRootPart
+    local rootPart = LocalCharacter.HumanoidRootPart
     local nearestPlayers = {}
     local shortestDistance1 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
-    local fovAngle = KillAura.Settings.MultiFOV.Value
     
-    for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player == Core.PlayerData.LocalPlayer then
-            continue
+    -- Оптимизация: кэшируем список игроков и фильтруем друзей заранее
+    local allPlayers = Players:GetPlayers()
+    local friendsList = Core.FriendsList
+    local validPlayers = {}
+    for _, player in pairs(allPlayers) do
+        if player ~= LocalPlayer and (not friendsList or not friendsList[player.Name]) then
+            table.insert(validPlayers, player)
         end
+    end
 
-        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then
-            continue
-        end
-
+    for _, player in pairs(validPlayers) do
         local targetChar = player.Character
         if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
             local targetRoot = targetChar.HumanoidRootPart
             local distance = (rootPart.Position - targetRoot.Position).Magnitude
             
             if distance <= shortestDistance1 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
-                rayCheck.FilterDescendantsInstances = {character, targetChar}
-                local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
+                rayCheck.FilterDescendantsInstances = {LocalCharacter, targetChar}
+                local raycastResult = Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
                 if not raycastResult then
                     table.insert(nearestPlayers, { Player = player, Distance = distance })
                     shortestDistance1 = distance
@@ -193,14 +210,8 @@ local function getNearestPlayers(attackRadius)
     local nearestPlayer2 = nil
     local shortestDistance2 = math.min(attackRadius, KillAura.Settings.SearchRange.Value)
     
-    for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player == Core.PlayerData.LocalPlayer or player == nearestPlayer1 then
-            continue
-        end
-
-        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then
-            continue
-        end
+    for _, player in pairs(validPlayers) do
+        if player == nearestPlayer1 then continue end
 
         local targetChar = player.Character
         if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
@@ -208,8 +219,8 @@ local function getNearestPlayers(attackRadius)
             local distance = (rootPart.Position - targetRoot.Position).Magnitude
             
             if distance <= shortestDistance2 and targetChar.Humanoid.Health > 0 and not isSafeZoneProtected(player) and isVisible(targetRoot) then
-                rayCheck.FilterDescendantsInstances = {character, targetChar}
-                local raycastResult = Core.Services.Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
+                rayCheck.FilterDescendantsInstances = {LocalCharacter, targetChar}
+                local raycastResult = Workspace:Raycast(rootPart.Position, (targetRoot.Position - rootPart.Position), rayCheck)
                 if not raycastResult then
                     nearestPlayer2 = player
                     shortestDistance2 = distance
@@ -222,33 +233,22 @@ local function getNearestPlayers(attackRadius)
 end
 
 local function lookAtTarget(target, isSnap, isMultiSnapSecondTarget)
-    if not KillAura.Settings.LookAtTarget.Value then 
-        return 
-    end
+    if not KillAura.Settings.LookAtTarget.Value or not target then return end
 
-    if Core.FriendsList and target and table.find(Core.FriendsList, target.Name) then
-        return
-    end
+    if Core.FriendsList[target.Name] then return end
 
-    local character = Core.PlayerData.LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then 
-        return 
-    end
-    
-    local rootPart = character.HumanoidRootPart
+    local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then 
-        return 
-    end
+    if not rootPart or not targetRoot then return end
     
     local direction = (targetRoot.Position - rootPart.Position).Unit
     local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + Vector3.new(direction.X, 0, direction.Z))
     
     if isSnap or KillAura.Settings.LookAtMethod.Value == "Snap" then
-        Core.Services.TweenService:Create(rootPart, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {CFrame = targetCFrame}):Play()
+        TweenService:Create(rootPart, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {CFrame = targetCFrame}):Play()
     elseif KillAura.Settings.LookAtMethod.Value == "MultiSnapAim" and isMultiSnapSecondTarget then
         rootPart.CFrame = targetCFrame
-        Core.Services.TweenService:Create(rootPart, TweenInfo.new(0.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {CFrame = targetCFrame}):Play()
+        TweenService:Create(rootPart, TweenInfo.new(0.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {CFrame = targetCFrame}):Play()
     else
         rootPart.CFrame = targetCFrame
     end
@@ -258,14 +258,13 @@ local function predictTargetPosition(target, partKey, beamKey)
     if not KillAura.Settings.Predict.Value then
         if KillAura.State[partKey] then KillAura.State[partKey]:Destroy() KillAura.State[partKey] = nil end
         if KillAura.State[beamKey] then KillAura.State[beamKey]:Destroy() KillAura.State[beamKey] = nil end
-        return Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame
+        return LocalCharacter and LocalCharacter.HumanoidRootPart and LocalCharacter.HumanoidRootPart.CFrame or CFrame.new()
     end
     
-    local character = Core.PlayerData.LocalPlayer.Character
     local targetChar = target.Character
-    if not character or not targetChar then return character.HumanoidRootPart.CFrame end
+    if not LocalCharacter or not targetChar then return LocalCharacter.HumanoidRootPart.CFrame end
     
-    local myRoot = character:FindFirstChild("HumanoidRootPart")
+    local myRoot = LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
     if not myRoot or not targetRoot then return myRoot.CFrame end
     
@@ -278,30 +277,32 @@ local function predictTargetPosition(target, partKey, beamKey)
     
     if KillAura.Settings.PredictVisualisation.Value then
         if not KillAura.State[partKey] then
-            KillAura.State[partKey] = Instance.new("Part")
-            KillAura.State[partKey].Size = Vector3.new(0.5, 0.5, 0.5)
-            KillAura.State[partKey].Shape = Enum.PartType.Ball
-            KillAura.State[partKey].Anchored = true
-            KillAura.State[partKey].CanCollide = false
-            KillAura.State[partKey].Transparency = 0.5
-            KillAura.State[partKey].Parent = Core.Services.Workspace
+            local part = Instance.new("Part")
+            part.Size = Vector3.new(0.5, 0.5, 0.5)
+            part.Shape = Enum.PartType.Ball
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 0.5
+            part.Parent = Workspace
+            KillAura.State[partKey] = part
         end
         KillAura.State[partKey].Position = predictedPosition
         local colorT = math.clamp(distance / 20, 0, 1)
         KillAura.State[partKey].Color = Color3.new(colorT, 1 - colorT, 0)
         
         if not KillAura.State[beamKey] then
-            KillAura.State[beamKey] = Instance.new("Beam")
-            KillAura.State[beamKey].FaceCamera = true
-            KillAura.State[beamKey].Width0 = 0.2
-            KillAura.State[beamKey].Width1 = 0.2
-            KillAura.State[beamKey].Transparency = NumberSequence.new(0.5)
-            KillAura.State[beamKey].Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
-            KillAura.State[beamKey].Parent = Core.Services.Workspace
+            local beam = Instance.new("Beam")
+            beam.FaceCamera = true
+            beam.Width0 = 0.2
+            beam.Width1 = 0.2
+            beam.Transparency = NumberSequence.new(0.5)
+            beam.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
+            beam.Parent = Workspace
             local attachment0 = Instance.new("Attachment", myRoot)
             local attachment1 = Instance.new("Attachment", KillAura.State[partKey])
-            KillAura.State[beamKey].Attachment0 = attachment0
-            KillAura.State[beamKey].Attachment1 = attachment1
+            beam.Attachment0 = attachment0
+            beam.Attachment1 = attachment1
+            KillAura.State[beamKey] = beam
         end
         KillAura.State[beamKey].Attachment0.Parent = myRoot
     end
@@ -312,7 +313,7 @@ end
 local function initializeTargetStrafe()
     if KillAura.Settings.TargetStrafe.Value then
         local success, moduleResult = pcall(function()
-            return require(Core.PlayerData.LocalPlayer.PlayerScripts.PlayerModule).controls
+            return require(LocalPlayer.PlayerScripts.PlayerModule).controls
         end)
         if success then
             KillAura.State.MoveModule = moduleResult
@@ -322,19 +323,18 @@ local function initializeTargetStrafe()
         
         KillAura.State.OldMoveFunction = KillAura.State.MoveModule.moveFunction
         KillAura.State.MoveModule.moveFunction = function(self, moveVector, faceCamera)
-            local character = Core.PlayerData.LocalPlayer.Character
             local nearestPlayer1, _ = getNearestPlayers(getAttackRadius(getEquippedTool()))
             
             if nearestPlayer1 then
-                local root = character and character:FindFirstChild("HumanoidRootPart")
+                local root = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
                 local targetRoot = nearestPlayer1.Character and nearestPlayer1.Character:FindFirstChild("HumanoidRootPart")
                 if not root or not targetRoot then return KillAura.State.OldMoveFunction(self, moveVector, faceCamera) end
                 
-                rayCheck.FilterDescendantsInstances = {character, nearestPlayer1.Character}
+                rayCheck.FilterDescendantsInstances = {LocalCharacter, nearestPlayer1.Character}
                 if root.CollisionGroup then rayCheck.CollisionGroup = root.CollisionGroup end
                 
                 local targetPos = targetRoot.Position
-                local groundRay = Core.Services.Workspace:Raycast(targetPos, Vector3.new(0, -70, 0), rayCheck)
+                local groundRay = Workspace:Raycast(targetPos, Vector3.new(0, -70, 0), rayCheck)
                 if groundRay then
                     local factor = 0
                     local localPosition = root.Position
@@ -347,13 +347,13 @@ local function initializeTargetStrafe()
                     local newPos = entityPos + (CFrame.Angles(0, math.rad(KillAura.State.StrafeAngle), 0).LookVector * (KillAura.Settings.StrafeRange.Value - yFactor))
                     local startRay, endRay = entityPos, newPos
                     
-                    local wallRay = Core.Services.Workspace:Raycast(targetPos, (localPosition - targetPos), rayCheck)
+                    local wallRay = Workspace:Raycast(targetPos, (localPosition - targetPos), rayCheck)
                     if wallRay then
                         startRay = entityPos + (CFrame.Angles(0, math.rad(KillAura.State.StrafeAngle), 0).LookVector * (entityPos - localPosition).Magnitude)
                         endRay = entityPos
                     end
                     
-                    local blockRay = Core.Services.Workspace:Blockcast(CFrame.new(startRay), Vector3.new(1, 5, 1), (endRay - startRay), rayCheck)
+                    local blockRay = Workspace:Blockcast(CFrame.new(startRay), Vector3.new(1, 5, 1), (endRay - startRay), rayCheck)
                     if (localPosition - newPos).Magnitude < 3 or blockRay then
                         factor = (8 - math.min((localPosition - newPos).Magnitude, 3))
                         if blockRay then
@@ -362,7 +362,7 @@ local function initializeTargetStrafe()
                         end
                     end
                     
-                    if not Core.Services.Workspace:Raycast(newPos, Vector3.new(0, -70, 0), rayCheck) then
+                    if not Workspace:Raycast(newPos, Vector3.new(0, -70, 0), rayCheck) then
                         newPos = entityPos
                         factor = 40
                     end
@@ -388,16 +388,11 @@ end
 
 -- Функции ThrowSilent
 local function getEquippedToolThrowSilent()
-    local character = Core.Services.Workspace:FindFirstChild(Core.PlayerData.LocalPlayer.Name)
-    if not character then return nil end
+    if not LocalCharacter then return nil end
     
-    for _, child in pairs(character:GetChildren()) do
-        if child.ClassName == "Tool" then
-            for _, validTool in pairs(ThrowSilent.Constants.VALID_TOOLS) do
-                if child.Name == validTool then
-                    return child
-                end
-            end
+    for _, child in pairs(LocalCharacter:GetChildren()) do
+        if child.ClassName == "Tool" and ThrowSilent.Constants.VALID_TOOLS[child.Name] then
+            return child
         end
     end
     return nil
@@ -409,8 +404,7 @@ local function getThrowRadius(tool)
 end
 
 local function getThrowSpeed(tool)
-    local throwSpeed = tool and tool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
-    return throwSpeed
+    return tool and tool:GetAttribute("ThrowSpeed") or ThrowSilent.Constants.DEFAULT_THROW_SPEED
 end
 
 local lastTargetUpdate = 0
@@ -419,23 +413,21 @@ local cachedTarget = nil
 
 local function getNearestPlayer(throwRadius)
     local currentTime = tick()
-    if currentTime - lastTargetUpdate < targetUpdateInterval and cachedTarget and cachedTarget.Character and cachedTarget.Character.Humanoid.Health > 0 then
+    if currentTime - lastTargetUpdate < targetUpdateInterval and cachedTarget and cachedTarget.Character and cachedTarget.Character.Humanoid and cachedTarget.Character.Humanoid.Health > 0 then
         return cachedTarget
     end
     lastTargetUpdate = currentTime
 
-    local character = Core.PlayerData.LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then 
+    if not LocalCharacter or not LocalCharacter:FindFirstChild("HumanoidRootPart") then 
         return nil 
     end
     
-    local rootPart = character.HumanoidRootPart
+    local rootPart = LocalCharacter.HumanoidRootPart
     local nearestPlayer = nil
     local shortestDistance = throwRadius
     
-    for _, player in pairs(Core.Services.Players:GetPlayers()) do
-        if player == Core.PlayerData.LocalPlayer then continue end
-        if Core.FriendsList and table.find(Core.FriendsList, player.Name) then continue end
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer or (Core.FriendsList and Core.FriendsList[player.Name]) then continue end
 
         local targetChar = player.Character
         if targetChar and targetChar:FindFirstChild("HumanoidRootPart") and targetChar:FindFirstChild("Humanoid") then
@@ -454,24 +446,13 @@ local function getNearestPlayer(throwRadius)
 end
 
 local function lookAtTargetThrowSilent(target)
-    if not ThrowSilent.Settings.LookAtTarget.Value then 
-        return 
-    end
+    if not ThrowSilent.Settings.LookAtTarget.Value or not target then return end
 
-    if Core.FriendsList and target and table.find(Core.FriendsList, target.Name) then
-        return
-    end
+    if Core.FriendsList[target.Name] then return end
     
-    local character = Core.PlayerData.LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then 
-        return 
-    end
-    
-    local rootPart = character.HumanoidRootPart
+    local rootPart = LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then 
-        return 
-    end
+    if not rootPart or not targetRoot then return end
     
     local direction = (targetRoot.Position - rootPart.Position)
     direction = Vector3.new(direction.X, 0, direction.Z).Unit
@@ -483,24 +464,23 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
     if not ThrowSilent.Settings.Predict.Value then
         if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-        return {position = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.Position, direction = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector}
+        return {position = LocalCharacter.HumanoidRootPart.Position, direction = LocalCharacter.HumanoidRootPart.CFrame.LookVector}
     end
     
-    local character = Core.PlayerData.LocalPlayer.Character
     local targetChar = target.Character
-    if not character or not targetChar then 
+    if not LocalCharacter or not targetChar then 
         if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-        return {position = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.Position, direction = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector}
+        return {position = LocalCharacter.HumanoidRootPart.Position, direction = LocalCharacter.HumanoidRootPart.CFrame.LookVector}
     end
     
-    local myRoot = character:FindFirstChild("HumanoidRootPart")
+    local myRoot = LocalCharacter:FindFirstChild("HumanoidRootPart")
     local targetHead = targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
     local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
     if not myRoot or not targetHead or not targetRoot then 
         if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
         if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
-        return {position = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.Position, direction = Core.PlayerData.LocalPlayer.Character.HumanoidRootPart.CFrame.LookVector}
+        return {position = LocalCharacter.HumanoidRootPart.Position, direction = LocalCharacter.HumanoidRootPart.CFrame.LookVector}
     end
     
     local velocity = targetRoot.Velocity
@@ -519,25 +499,27 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
     
     if ThrowSilent.Settings.PredictVisualisation.Value then
         if not ThrowSilent.State.PredictVisualPart then
-            ThrowSilent.State.PredictVisualPart = Instance.new("Part")
-            ThrowSilent.State.PredictVisualPart.Size = Vector3.new(0.5, 0.5, 0.5)
-            ThrowSilent.State.PredictVisualPart.Shape = Enum.PartType.Ball
-            ThrowSilent.State.PredictVisualPart.Anchored = true
-            ThrowSilent.State.PredictVisualPart.CanCollide = false
-            ThrowSilent.State.PredictVisualPart.Transparency = 0.5
-            ThrowSilent.State.PredictVisualPart.Color = Color3.fromRGB(0, 255, 0)
-            ThrowSilent.State.PredictVisualPart.Parent = Core.Services.Workspace
+            local part = Instance.new("Part")
+            part.Size = Vector3.new(0.5, 0.5, 0.5)
+            part.Shape = Enum.PartType.Ball
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 0.5
+            part.Color = Color3.fromRGB(0, 255, 0)
+            part.Parent = Workspace
+            ThrowSilent.State.PredictVisualPart = part
         end
         ThrowSilent.State.PredictVisualPart.Position = adjustedPosition
         
         if not ThrowSilent.State.RotationVisualPart then
-            ThrowSilent.State.RotationVisualPart = Instance.new("Part")
-            ThrowSilent.State.RotationVisualPart.Size = Vector3.new(0.2, 0.2, 2)
-            ThrowSilent.State.RotationVisualPart.Anchored = true
-            ThrowSilent.State.RotationVisualPart.CanCollide = false
-            ThrowSilent.State.RotationVisualPart.Transparency = 0.5
-            ThrowSilent.State.RotationVisualPart.Color = Color3.fromRGB(255, 0, 0)
-            ThrowSilent.State.RotationVisualPart.Parent = Core.Services.Workspace
+            local part = Instance.new("Part")
+            part.Size = Vector3.new(0.2, 0.2, 2)
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 0.5
+            part.Color = Color3.fromRGB(255, 0, 0)
+            part.Parent = Workspace
+            ThrowSilent.State.RotationVisualPart = part
         end
         local startPos = myRoot.Position + Vector3.new(0, 1.5, 0)
         local endPos = startPos + (adjustedDirection * 5)
@@ -551,7 +533,14 @@ local function predictTargetPositionAndRotation(target, throwSpeed)
     return {position = adjustedPosition, direction = adjustedDirection}
 end
 
+local lastToolCheckTime = 0
+local toolCheckInterval = 0.2
+
 local function checkToolChangeThrowSilent()
+    local currentTime = tick()
+    if currentTime - lastToolCheckTime < toolCheckInterval then return end
+    lastToolCheckTime = currentTime
+
     local currentTool = getEquippedToolThrowSilent()
     
     if currentTool ~= ThrowSilent.State.LastTool then
@@ -583,7 +572,6 @@ local function checkToolChangeThrowSilent()
     end
 end
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not Remotes then
     warn("Remotes not found in ReplicatedStorage")
@@ -602,11 +590,9 @@ local function initializeThrowSilent()
 
     -- Поиск v_u_4
     for _, obj in pairs(getgc(true)) do
-        if type(obj) == "table" and not getmetatable(obj) then
-            if obj.event and obj.func and type(obj.event) == "number" and type(obj.func) == "number" then
-                ThrowSilent.State.V_U_4 = obj
-                break
-            end
+        if type(obj) == "table" and not getmetatable(obj) and obj.event and obj.func and type(obj.event) == "number" and type(obj.func) == "number" then
+            ThrowSilent.State.V_U_4 = obj
+            break
         end
     end
 
@@ -614,7 +600,6 @@ local function initializeThrowSilent()
         warn("Не удалось найти таблицу для обхода ID")
     end
 
-    -- Перехват FireServer для обычного режима
     if not ThrowSilent.State.OldFireServer then
         ThrowSilent.State.OldFireServer = hookfunction(SendRemote.FireServer, function(self, ...)
             local args = {...}
@@ -639,13 +624,12 @@ local function initializeThrowSilent()
         end)
     end
 
-    -- Основной цикл для RAGE режима
     if ThrowSilent.State.Connection then
         ThrowSilent.State.Connection:Disconnect()
         ThrowSilent.State.Connection = nil
     end
 
-    ThrowSilent.State.Connection = Core.Services.RunService.Heartbeat:Connect(function()
+    ThrowSilent.State.Connection = RunService.Heartbeat:Connect(function()
         if not ThrowSilent.Settings.Enabled.Value then
             if ThrowSilent.State.PredictVisualPart then ThrowSilent.State.PredictVisualPart:Destroy() ThrowSilent.State.PredictVisualPart = nil end
             if ThrowSilent.State.RotationVisualPart then ThrowSilent.State.RotationVisualPart:Destroy() ThrowSilent.State.RotationVisualPart = nil end
@@ -659,8 +643,7 @@ local function initializeThrowSilent()
             ThrowSilent.State.LastLogTime = currentTime
         end
 
-        local character = Core.PlayerData.LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
+        if LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart") then
             local equippedTool = getEquippedToolThrowSilent()
             if equippedTool then
                 local throwRadius = getThrowRadius(equippedTool)
@@ -734,7 +717,14 @@ else
     warn("SendRemote is nil, cannot hook FireServer")
 end
 
+local lastKillAuraToolCheckTime = 0
+local killAuraToolCheckInterval = 0.2
+
 local function checkToolChange()
+    local currentTime = tick()
+    if currentTime - lastKillAuraToolCheckTime < killAuraToolCheckInterval then return end
+    lastKillAuraToolCheckTime = currentTime
+
     local currentTool = getEquippedTool()
     if currentTool ~= KillAura.State.LastTool then
         if currentTool and not KillAura.State.LastTool then
@@ -743,16 +733,12 @@ local function checkToolChange()
                 local baseRange = currentTool:GetAttribute("Range") or KillAura.Settings.DefaultAttackRadius.Value
                 if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. radius .. ")", true })
-                else
-                    warn("Notification failed: UI.Window or Notify is nil")
                 end
                 KillAura.State.LastTool = currentTool
             end
         elseif KillAura.State.LastTool and not currentTool then
             if UI and UI.Window and UI.Window.Notify then
                 UI.Window:Notify({ Title = "KillAura", Description = "Unequipped: " .. KillAura.State.LastTool.Name, true })
-            else
-                warn("Notification failed: UI.Window or Notify is nil")
             end
             if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
             if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
@@ -765,15 +751,11 @@ local function checkToolChange()
                 local newRadius = getAttackRadius(currentTool)
                 if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Switched from " .. KillAura.State.LastTool.Name .. " (Range: " .. oldRadius .. ") to " .. currentTool.Name .. " (Range: " .. newRadius .. ")", true })
-                else
-                    warn("Notification failed: UI.Window or Notify is nil")
                 end
                 KillAura.State.LastTool = currentTool
             else
                 if UI and UI.Window and UI.Window.Notify then
                     UI.Window:Notify({ Title = "KillAura", Description = "Unequipped: " .. KillAura.State.LastTool.Name, true })
-                else
-                    warn("Notification failed: UI.Window or Notify is nil")
                 end
                 if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
                 if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
@@ -1067,7 +1049,6 @@ local function Init(ui, core, notificationFunc)
     Core = core
     notify = notificationFunc
 
-    -- Добавление секций KillAura и ThrowSilent в Combat tab
     if UI and UI.Tabs and UI.Tabs.Combat then
         UI.Sections.KillAura = UI.Tabs.Combat:Section({ Name = "KillAura", Side = "Left" })
         UI.Sections.ThrowableSilent = UI.Tabs.Combat:Section({ Name = "Throwable Silent", Side = "Right" })
@@ -1076,16 +1057,12 @@ local function Init(ui, core, notificationFunc)
         return
     end
 
-    -- Настройка UI
     setupUI()
-
-    -- Инициализация KillAura и ThrowSilent
     initializeTargetStrafe()
     initializeThrowSilent()
 
-    -- Настройка соединений
     local connection
-    connection = Core.Services.RunService.RenderStepped:Connect(function()
+    connection = RunService.RenderStepped:Connect(function()
         if not KillAura.Settings.Enabled.Value then
             if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
             if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
@@ -1099,8 +1076,7 @@ local function Init(ui, core, notificationFunc)
         local currentTime = tick()
         checkToolChange()
         
-        local character = Core.PlayerData.LocalPlayer.Character
-        if character and character:FindFirstChild("HumanoidRootPart") then
+        if LocalCharacter and LocalCharacter:FindFirstChild("HumanoidRootPart") then
             local equippedTool = getEquippedTool()
             if equippedTool and isMeleeWeapon(equippedTool) then
                 local attackRadius = getAttackRadius(equippedTool)
@@ -1156,13 +1132,14 @@ local function Init(ui, core, notificationFunc)
         end
     end)
 
-    Core.PlayerData.LocalPlayer.CharacterAdded:Connect(function(character)
+    LocalPlayer.CharacterAdded:Connect(function(character)
         character:WaitForChild("HumanoidRootPart")
+        LocalCharacter = character
         KillAura.State.StrafeAngle = 0
         KillAura.State.StrafeVector = nil
         KillAura.State.LastTarget = nil
         KillAura.State.LastTool = nil
-        KillAura.State.CurrentTargetIndex = 1
+        Kill{}]Aura.State.CurrentTargetIndex = 1
         KillAura.State.LastSwitchTime = 0
         if KillAura.State.PredictVisualPart1 then KillAura.State.PredictVisualPart1:Destroy() KillAura.State.PredictVisualPart1 = nil end
         if KillAura.State.PredictBeam1 then KillAura.State.PredictBeam1:Destroy() KillAura.State.PredictBeam1 = nil end
@@ -1174,7 +1151,6 @@ local function Init(ui, core, notificationFunc)
     end)
 end
 
--- Возврат модуля
 return {
     Init = Init
 }
