@@ -251,7 +251,7 @@ function Combat.Init(UI, Core, notify)
         local predictedPosition = targetRoot.Position + velocity * predictAmount
         local predictedCFrame = CFrame.new(predictedPosition, predictedPosition + myRoot.CFrame.LookVector)
 
-        if     if KillAura.Settings.PredictVisualisation.Value then
+        if KillAura.Settings.PredictVisualisation.Value then
             if not KillAura.State[partKey] then
                 KillAura.State[partKey] = Instance.new("Part")
                 KillAura.State[partKey].Size = Vector3.new(0.5, 0.5, 0.5)
