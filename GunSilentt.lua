@@ -9,7 +9,7 @@ if not WatermarkModule then
         _G.WatermarkModule = WatermarkModule -- Сохраняем в глобальной области
     else
         warn("Failed to load Visuals.lua:", result)
-        WatermarkModule = { Settings = { gradientColor1 = Color3.fromRGB(255, 255, 255), gradientColor2 = Color3.fromRGB(255, 255, 255) } }
+        WatermarkModule = { Settings = { GradientColor1 = { Value = Color3.fromRGB(255, 255, 255) }, GradientColor2 = { Value = Color3.fromRGB(255, 255, 255) } } }
     end
 end
 
@@ -91,7 +91,7 @@ local GunSilent = {
         TrajectoryBeam = nil,
         FullTrajectoryParts = nil
     },
-    Watermark = WatermarkModule -- Присваиваем Watermark здесь
+    Watermark = WatermarkModule
 }
 
 local Players = game:GetService("Players")
@@ -157,37 +157,784 @@ local function updateFovCircle(deltaTime)
         local speed = GunSilent.Settings.GradientSpeed.Value
         local t = (math.sin(GunSilent.State.GradientTime / speed * 2 * math.pi) + 1) / 2
 
-        -- Берем цвета из GradientColors (ESP.Settings в Visuals.lua)
         local color1, color2
-        if GunSilent.Watermark and GunSilent.Watermark.ESP and GunSilent.Watermark.ESP.Settings and GunSilent.Watermark.ESP.Settings.GradientColor1 and GunSilent.Watermark.ESP.Settings.GradientColor2 then
-            color1 = GunSilent.Watermark.ESP.Settings.GradientColor1.Value
-            color2 = GunSilent.Watermark.ESP.Settings.GradientColor2.Value
+        if GunSilent.Watermark and GunSilent.Watermark.Settings and GunSilent.Watermark.Settings.GradientColor1 and GunSilent.Watermark.Settings.GradientColor2 then
+            color1 = GunSilent.Watermark.Settings.GradientColor1.Value
+            color2 = GunSilent.Watermark.Settings.GradientColor2.Value
         else
-            -- Если что-то недоступно, используем цвета по умолчанию
             color1 = Color3.fromRGB(0, 0, 255)
             color2 = Color3.fromRGB(147, 112, 219)
         end
 
         local interpolatedColor = color1:Lerp(color2, t)
         GunSilent.State.FovCircle.Color = interpolatedColor
-
-        -- Отладочный вывод для проверки
-        print("FOV Circle Color Updated:", interpolatedColor, "GradientCircle:", GunSilent.Settings.GradientCircle.Value)
     else
         GunSilent.State.FovCircle.Color = Color3.fromRGB(255, 255, 255)
     end
 end
 
--- Остальные функции остаются без изменений, обновляем только Init
+local function isInFov(targetPos)
+    if not GunSilent.Settings.UseFOV.Value then return true end
+    local camera = GunSilent.Core.PlayerData.Camera
+    if not camera then return false end
+    local screenPos, onScreen = camera:WorldToViewportPoint(targetPos)
+    if not onScreen then return false end
+    local mousePos = GunSilent.Core.Services.UserInputService:GetMouseLocation()
+    local targetScreenPos = Vector2.new(screenPos.X, screenPos.Y)
+    local distanceFromMouse = (targetScreenPos - mousePos).Magnitude
+    local fovRadius = math.tan(math.rad(GunSilent.Settings.FOV.Value) / 2) * camera.ViewportSize.X / 2
+    return distanceFromMouse <= fovRadius
+end
+
+local function getNearestPlayerGun()
+    local character = GunSilent.Core.PlayerData.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local rootPart = character.HumanoidRootPart
+    local nearestPlayer = nil
+    local shortestDistance = GunSilent.Settings.RangePlus.Value + 50
+    local closestToCursor = math.huge
+    local camera = GunSilent.Core.PlayerData.Camera
+    local bestScore = math.huge
+
+    for _, player in pairs(GunSilent.Core.Services.Players:GetPlayers()) do
+        if player == GunSilent.Core.PlayerData.LocalPlayer then
+            continue
+        end
+
+        if GunSilent.Core.FriendsList and table.find(GunSilent.Core.FriendsList, player.Name) then
+            continue
+        end
+
+        local targetChar = player.Character
+        if not targetChar or not targetChar:FindFirstChild("HumanoidRootPart") or not targetChar:FindFirstChild("Humanoid") then
+            continue
+        end
+
+        local targetRoot = targetChar.HumanoidRootPart
+        if targetChar.Humanoid.Health <= 0 then
+            continue
+        end
+
+        local distance = (rootPart.Position - targetRoot.Position).Magnitude
+        if distance > shortestDistance and GunSilent.Settings.SortMethod.Value == "Distance" then
+            continue
+        end
+
+        if not isInFov(targetRoot.Position) then
+            continue
+        end
+
+        if GunSilent.Settings.SortMethod.Value == "Mouse&Distance" then
+            local screenPos, onScreen = camera:WorldToViewportPoint(targetRoot.Position)
+            if onScreen then
+                local mousePos = GunSilent.Core.Services.UserInputService:GetMouseLocation()
+                local cursorDistance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                local normalizedDistance = distance / (GunSilent.Settings.RangePlus.Value + 50)
+                local normalizedCursor = cursorDistance / camera.ViewportSize.X
+                local score = normalizedDistance + normalizedCursor
+                if score < bestScore then
+                    bestScore = score
+                    nearestPlayer = player
+                end
+            end
+        elseif GunSilent.Settings.SortMethod.Value == "Distance" then
+            if distance < shortestDistance then
+                shortestDistance = distance
+                nearestPlayer = player
+            end
+        elseif GunSilent.Settings.SortMethod.Value == "Mouse" then
+            local screenPos, onScreen = camera:WorldToViewportPoint(targetRoot.Position)
+            if onScreen then
+                local mousePos = GunSilent.Core.Services.UserInputService:GetMouseLocation()
+                local cursorDistance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                if cursorDistance < closestToCursor then
+                    closestToCursor = cursorDistance
+                    nearestPlayer = player
+                end
+            end
+        end
+    end
+
+    return nearestPlayer
+end
+
+local function updateVisuals(target, predictedPosition, targetPosition)
+    local currentTime = tick()
+    local updateFrequency = GunSilent.Settings.VisualUpdateFrequency.Value
+
+    if GunSilent.State.LastVisualUpdateTime == nil then
+        GunSilent.State.LastVisualUpdateTime = currentTime
+    end
+
+    if currentTime - GunSilent.State.LastVisualUpdateTime < updateFrequency then
+        return
+    end
+    GunSilent.State.LastVisualUpdateTime = currentTime
+
+    if not GunSilent.Settings.PredictVisual.Value then
+        if GunSilent.State.PredictVisualPart and GunSilent.State.PredictVisualPart.Parent then
+            GunSilent.State.PredictVisualPart.Parent = nil
+        end
+        if GunSilent.State.TargetVisualPart and GunSilent.State.TargetVisualPart.Parent then
+            GunSilent.State.TargetVisualPart.Parent = nil
+        end
+        GunSilent.State.PredictVisualPart = nil
+        GunSilent.State.TargetVisualPart = nil
+        return
+    end
+
+    if target == nil or (predictedPosition == nil and targetPosition == nil) then
+        if GunSilent.State.PredictVisualPart and GunSilent.State.PredictVisualPart.Parent then
+            GunSilent.State.PredictVisualPart.Parent = nil
+        end
+        if GunSilent.State.TargetVisualPart and GunSilent.State.TargetVisualPart.Parent then
+            GunSilent.State.TargetVisualPart.Parent = nil
+        end
+        GunSilent.State.PredictVisualPart = nil
+        GunSilent.State.TargetVisualPart = nil
+        return
+    end
+
+    if not GunSilent.State.PredictVisualPart or not GunSilent.State.PredictVisualPart.Parent then
+        local success, err = pcall(function()
+            GunSilent.State.PredictVisualPart = Instance.new("Part")
+            GunSilent.State.PredictVisualPart.Size = Vector3.new(1, 1, 1)
+            GunSilent.State.PredictVisualPart.Anchored = true
+            GunSilent.State.PredictVisualPart.CanCollide = false
+            GunSilent.State.PredictVisualPart.Transparency = 0.5
+            GunSilent.State.PredictVisualPart.BrickColor = BrickColor.new("Bright red")
+            GunSilent.State.PredictVisualPart.Parent = GunSilent.Core.Services.Workspace
+        end)
+        if not success then
+            warn("Failed to create PredictVisualPart: " .. tostring(err))
+            GunSilent.State.PredictVisualPart = nil
+            return
+        end
+    end
+
+    if not GunSilent.State.TargetVisualPart or not GunSilent.State.TargetVisualPart.Parent then
+        local success, err = pcall(function()
+            GunSilent.State.TargetVisualPart = Instance.new("Part")
+            GunSilent.State.TargetVisualPart.Size = Vector3.new(1, 1, 1)
+            GunSilent.State.TargetVisualPart.Anchored = true
+            GunSilent.State.TargetVisualPart.CanCollide = false
+            GunSilent.State.TargetVisualPart.Transparency = 0.5
+            GunSilent.State.TargetVisualPart.BrickColor = BrickColor.new("Bright blue")
+            GunSilent.State.TargetVisualPart.Parent = GunSilent.Core.Services.Workspace
+        end)
+        if not success then
+            warn("Failed to create TargetVisualPart: " .. tostring(err))
+            GunSilent.State.TargetVisualPart = nil
+        end
+    end
+
+    local success, err = pcall(function()
+        if predictedPosition and typeof(predictedPosition) == "Vector3" then
+            GunSilent.State.PredictVisualPart.CFrame = CFrame.new(predictedPosition)
+        elseif targetPosition and typeof(targetPosition) == "Vector3" then
+            GunSilent.State.PredictVisualPart.CFrame = CFrame.new(targetPosition)
+        else
+            if GunSilent.State.PredictVisualPart and GunSilent.State.PredictVisualPart.Parent then
+                GunSilent.State.PredictVisualPart.Parent = nil
+            end
+            GunSilent.State.PredictVisualPart = nil
+        end
+    end)
+    if not success then
+        warn("Failed to update PredictVisualPart: " .. tostring(err))
+        if GunSilent.State.PredictVisualPart and GunSilent.State.PredictVisualPart.Parent then
+            GunSilent.State.PredictVisualPart.Parent = nil
+        end
+        GunSilent.State.PredictVisualPart = nil
+    end
+
+    if GunSilent.State.TargetVisualPart then
+        local success, err = pcall(function()
+            if targetPosition and typeof(targetPosition) == "Vector3" then
+                GunSilent.State.TargetVisualPart.CFrame = CFrame.new(targetPosition)
+            else
+                if GunSilent.State.TargetVisualPart and GunSilent.State.TargetVisualPart.Parent then
+                    GunSilent.State.TargetVisualPart.Parent = nil
+                end
+                GunSilent.State.TargetVisualPart = nil
+            end
+        end)
+        if not success then
+            warn("Failed to update TargetVisualPart: " .. tostring(err))
+            if GunSilent.State.TargetVisualPart and GunSilent.State.TargetVisualPart.Parent then
+                GunSilent.State.TargetVisualPart.Parent = nil
+            end
+            GunSilent.State.TargetVisualPart = nil
+        end
+    end
+end
+
+Players.PlayerRemoving:Connect(function(player)
+    local userId = tostring(player.UserId)
+    if GunSilent.State.PositionHistory[player] then
+        GunSilent.State.PositionHistory[player] = nil
+    end
+    if GunSilent.State.LastTargetPosition[userId] then
+        GunSilent.State.LastTargetPosition[userId] = nil
+    end
+end)
+
+local function predictTargetPositionGun(target, applyFakeDistance)
+    if not target or not target.Character then
+        updateVisuals(nil, nil, nil)
+        return { position = nil, direction = nil, realDirection = nil, fakePosition = nil, timeToTarget = 0 }
+    end
+
+    local character = GunSilent.Core.PlayerData.LocalPlayer.Character
+    local targetChar = target.Character
+    if not character or not targetChar then
+        updateVisuals(nil, nil, nil)
+        return { position = nil, direction = nil, realDirection = nil, fakePosition = nil, timeToTarget = 0 }
+    end
+
+    local myRoot = character:FindFirstChild("HumanoidRootPart")
+    local hitPart = GunSilent.Settings.HitPart.Value == "Random" and
+        (math.random() > 0.5 and targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("UpperTorso")) or
+        targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot or not hitPart or not targetRoot then
+        updateVisuals(nil, nil, nil)
+        return { position = nil, direction = nil, realDirection = nil, fakePosition = nil, timeToTarget = 0 }
+    end
+
+    local myPosition = myRoot.Position
+    local targetPosition = hitPart.Position
+    if not myPosition or not targetPosition then
+        updateVisuals(nil, nil, nil)
+        return { position = nil, direction = nil, realDirection = nil, fakePosition = nil, timeToTarget = 0 }
+    end
+
+    local targetId = tostring(target.UserId)
+
+    local positionJumpThreshold = 50
+    local isPositionJump = false
+    if GunSilent.State.LastTargetPosition[targetId] then
+        local positionDelta = (targetPosition - GunSilent.State.LastTargetPosition[targetId]).Magnitude
+        if positionDelta > positionJumpThreshold then
+            isPositionJump = true
+        end
+    end
+    GunSilent.State.LastTargetPosition[targetId] = targetPosition
+
+    local fakePosition = myPosition
+    if applyFakeDistance and GunSilent.Settings.FakeDistance.Value > 0 then
+        local directionToTarget = (targetPosition - myPosition).Unit
+        local distance = (targetPosition - myPosition).Magnitude
+        local fakeDistance = math.max(1, distance - GunSilent.Settings.FakeDistance.Value)
+        fakePosition = targetPosition - directionToTarget * fakeDistance
+    end
+
+    local distance = (targetPosition - fakePosition).Magnitude
+    local realDistance = (targetPosition - myPosition).Magnitude
+
+    local smallDistanceThreshold = 50
+    local mediumDistanceThreshold = 150
+    local distanceType
+    if distance <= smallDistanceThreshold then
+        distanceType = "small"
+    elseif distance <= mediumDistanceThreshold then
+        distanceType = "medium"
+    else
+        distanceType = "large"
+    end
+
+    local bulletSpeed = GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.PredictBullet.Value or GunSilent.FixedPredictionValues.PredictBullet
+    local timeToTarget = distance / bulletSpeed
+    local realTimeToTarget = realDistance / bulletSpeed
+
+    local positionHistory = GunSilent.State.PositionHistory
+    positionHistory[target] = positionHistory[target] or {}
+    local history = positionHistory[target]
+    local currentTime = tick()
+
+    for i = #history, 1, -1 do
+        if currentTime - history[i].time > 1 then
+            table.remove(history, i)
+        end
+    end
+    table.insert(history, { pos = targetPosition, time = currentTime })
+
+    local historySize = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedPositionHistorySize.Value or GunSilent.FixedPredictionValues.PositionHistorySize) + 2
+    if #history > historySize then
+        table.remove(history, 1)
+    end
+
+    local effectiveVelocity = Vector3.new(0, 0, 0)
+    local effectiveSpeed = 0
+    local teleportThreshold = GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedTeleportThreshold.Value or GunSilent.FixedPredictionValues.TeleportThreshold
+    local maxSpeedLimit = GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedMaxSpeed.Value or GunSilent.FixedPredictionValues.MaxSpeed
+    local isTeleporting = false
+
+    if #history >= 3 then
+        local totalVelocity = Vector3.new(0, 0, 0)
+        local velocityCount = 0
+        for i = #history, 2, -1 do
+            local latest = history[i]
+            local prev = history[i - 1]
+            local deltaTime = latest.time - prev.time
+            if deltaTime > 0.001 then
+                local velocity = (latest.pos - prev.pos) / deltaTime
+                totalVelocity = totalVelocity + velocity
+                velocityCount = velocityCount + 1
+            end
+        end
+        if velocityCount > 0 then
+            effectiveVelocity = totalVelocity / velocityCount
+            effectiveSpeed = effectiveVelocity.Magnitude
+            if effectiveSpeed > teleportThreshold then
+                isTeleporting = true
+                effectiveVelocity = Vector3.new(0, 0, 0)
+                effectiveSpeed = 0
+            elseif effectiveSpeed > maxSpeedLimit then
+                effectiveVelocity = effectiveVelocity.Unit * maxSpeedLimit
+                effectiveSpeed = maxSpeedLimit
+            end
+        end
+    else
+        if targetRoot then
+            effectiveVelocity = targetRoot.Velocity
+            effectiveSpeed = effectiveVelocity.Magnitude
+            if effectiveSpeed > teleportThreshold then
+                isTeleporting = true
+                effectiveVelocity = Vector3.new(0, 0, 0)
+                effectiveSpeed = 0
+            elseif effectiveSpeed > maxSpeedLimit then
+                effectiveVelocity = effectiveVelocity.Unit * maxSpeedLimit
+                effectiveSpeed = maxSpeedLimit
+            end
+        end
+    end
+
+    local humanoid = targetChar:FindFirstChild("Humanoid")
+    local isInVehicle = humanoid and humanoid.SeatPart ~= nil or false
+
+    local latencyCompensation = GunSilent.Settings.LatencyCompensation.Value
+    local adjustedTimeToTarget = timeToTarget + latencyCompensation
+    local adjustedRealTimeToTarget = realTimeToTarget + latencyCompensation
+
+    local predictedPosition = targetPosition
+    if not isTeleporting and not isPositionJump then
+        local predictionFactor = 1
+        local aggressiveness = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedPredictionAggressiveness.Value or GunSilent.FixedPredictionValues.PredictionAggressiveness) * 1
+        local smallDistanceSpeedFactorMultiplier = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedSmallDistanceSpeedFactorMultiplier.Value or GunSilent.FixedPredictionValues.SmallDistanceSpeedFactorMultiplier) * 1
+        local slowVehiclePredictionFactor = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedSlowVehiclePredictionFactor.Value or GunSilent.FixedPredictionValues.SlowVehiclePredictionFactor) * 1
+        local fastVehiclePredictionLimit = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedFastVehiclePredictionLimit.Value or GunSilent.FixedPredictionValues.FastVehiclePredictionLimit) * 1
+
+        if isInVehicle then
+            local vehicleFactor = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedVehicleFactor.Value or GunSilent.FixedPredictionValues.VehicleFactor) * 1
+            local speedFactor
+            if distanceType == "small" then
+                if effectiveSpeed > 100 then
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 2.5) * smallDistanceSpeedFactorMultiplier
+                else
+                    speedFactor = math.clamp(effectiveSpeed / 20, 0.5, 1.2) * smallDistanceSpeedFactorMultiplier
+                end
+            elseif distanceType == "medium" then
+                if effectiveSpeed > 100 then
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 1.8) * fastVehiclePredictionLimit
+                else
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 1) * slowVehiclePredictionFactor
+                end
+            else
+                if effectiveSpeed > 100 then
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 1.2) * fastVehiclePredictionLimit
+                else
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 0.6) * slowVehiclePredictionFactor
+                end
+            end
+            if distanceType == "small" then
+                predictionFactor = speedFactor * (vehicleFactor * 0.5) * aggressiveness
+            elseif distanceType == "medium" then
+                predictionFactor = speedFactor * vehicleFactor * aggressiveness
+            else
+                predictionFactor = speedFactor * vehicleFactor * aggressiveness
+            end
+            predictedPosition = targetPosition + effectiveVelocity * adjustedTimeToTarget * predictionFactor
+        else
+            local pedestrianFactor = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedPedestrianFactor.Value or GunSilent.FixedPredictionValues.PedestrianFactor) * 1
+            local speedFactor = math.clamp(effectiveSpeed / 20, 0.5, 1)
+            if distanceType == "small" then
+                predictionFactor = speedFactor * (pedestrianFactor * 0.5) * aggressiveness
+            elseif distanceType == "medium" then
+                predictionFactor = speedFactor * pedestrianFactor * aggressiveness
+            else
+                predictionFactor = speedFactor * pedestrianFactor * aggressiveness
+            end
+            predictedPosition = targetPosition + effectiveVelocity * adjustedTimeToTarget * predictionFactor
+        end
+    end
+
+    local realPredictedPosition = targetPosition
+    if not isTeleporting and not isPositionJump then
+        local predictionFactor = 1
+        local aggressiveness = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedPredictionAggressiveness.Value or GunSilent.FixedPredictionValues.PredictionAggressiveness) * 1
+        local smallDistanceSpeedFactorMultiplier = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedSmallDistanceSpeedFactorMultiplier.Value or GunSilent.FixedPredictionValues.SmallDistanceSpeedFactorMultiplier) * 1
+        local slowVehiclePredictionFactor = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedSlowVehiclePredictionFactor.Value or GunSilent.FixedPredictionValues.SlowVehiclePredictionFactor) * 1
+        local fastVehiclePredictionLimit = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedFastVehiclePredictionLimit.Value or GunSilent.FixedPredictionValues.FastVehiclePredictionLimit) * 1
+
+        if isInVehicle then
+            local vehicleFactor = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedVehicleFactor.Value or GunSilent.FixedPredictionValues.VehicleFactor) * 1
+            local speedFactor
+            if distanceType == "small" then
+                if effectiveSpeed > 100 then
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 2.5) * smallDistanceSpeedFactorMultiplier
+                else
+                    speedFactor = math.clamp(effectiveSpeed / 20, 0.5, 1.2) * smallDistanceSpeedFactorMultiplier
+                end
+            elseif distanceType == "medium" then
+                if effectiveSpeed > 100 then
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 1.8) * fastVehiclePredictionLimit
+                else
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 1) * slowVehiclePredictionFactor
+                end
+            else
+                if effectiveSpeed > 100 then
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 1.2) * fastVehiclePredictionLimit
+                else
+                    speedFactor = math.clamp(effectiveSpeed / 50, 0.5, 0.6) * slowVehiclePredictionFactor
+                end
+            end
+            if distanceType == "small" then
+                predictionFactor = speedFactor * (vehicleFactor * 0.5) * aggressiveness
+            elseif distanceType == "medium" then
+                predictionFactor = speedFactor * vehicleFactor * aggressiveness
+            else
+                predictionFactor = speedFactor * vehicleFactor * aggressiveness
+            end
+            realPredictedPosition = targetPosition + effectiveVelocity * adjustedRealTimeToTarget * predictionFactor
+        else
+            local pedestrianFactor = (GunSilent.Settings.AdvancedEnabled.Value and GunSilent.Settings.AdvancedPedestrianFactor.Value or GunSilent.FixedPredictionValues.PedestrianFactor) * 1
+            local speedFactor = math.clamp(effectiveSpeed / 20, 0.5, 1)
+            if distanceType == "small" then
+                predictionFactor = speedFactor * (pedestrianFactor * 0.5) * aggressiveness
+            elseif distanceType == "medium" then
+                predictionFactor = speedFactor * pedestrianFactor * aggressiveness
+            else
+                predictionFactor = speedFactor * pedestrianFactor * aggressiveness
+            end
+            realPredictedPosition = targetPosition + effectiveVelocity * adjustedRealTimeToTarget * predictionFactor
+        end
+    end
+
+    local directionToTarget = (predictedPosition - (fakePosition + Vector3.new(0, 1.5, 0))).Unit
+    local realDirectionToTarget = (realPredictedPosition - (myPosition + Vector3.new(0, 1.5, 0))).Unit
+
+    GunSilent.State.IsTeleporting = isTeleporting
+
+    updateVisuals(target, predictedPosition, targetPosition)
+
+    return {
+        position = predictedPosition,
+        direction = directionToTarget,
+        realDirection = realDirectionToTarget,
+        fakePosition = fakePosition,
+        timeToTarget = timeToTarget
+    }
+end
+
+local function getAimCFrameGun(target)
+    if not target or not target.Character then return nil end
+    local character = GunSilent.Core.PlayerData.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    local prediction = predictTargetPositionGun(target, true)
+    if not prediction.position or not prediction.direction then return nil end
+    local rootPart = character.HumanoidRootPart
+    return CFrame.new(rootPart.Position, rootPart.Position + prediction.direction)
+end
+
+local function createHitDataGun(target)
+    if not target or not target.Character then return nil end
+    local targetChar = target.Character
+    local prediction = predictTargetPositionGun(target, true)
+    if not prediction.position or not prediction.direction or not prediction.fakePosition then return nil end
+
+    local hitPart = GunSilent.Settings.HitPart.Value == "Random" and
+        (math.random() > 0.5 and targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("UpperTorso")) or
+        targetChar:FindFirstChild(GunSilent.Settings.HitPart.Value) or targetChar:FindFirstChild("HumanoidRootPart")
+    if not hitPart then return nil end
+
+    local character = GunSilent.Core.PlayerData.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    local myRoot = character.HumanoidRootPart
+
+    local hitData = {}
+    if GunSilent.Settings.WallSupport.Value then
+        local rayOrigin = myRoot.Position + Vector3.new(0, 1.5, 0)
+        local rayDirection = prediction.direction * (prediction.position - rayOrigin).Magnitude
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {character, targetChar}
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        local raycastResult = GunSilent.Core.Services.Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+
+        if raycastResult then
+            hitData[1] = {
+                [1] = {Normal = raycastResult.Normal, Instance = raycastResult.Instance, Position = raycastResult.Position},
+                [2] = {Normal = prediction.direction, Instance = hitPart, Position = prediction.position}
+            }
+        else
+            hitData[1] = {{Normal = prediction.direction, Instance = hitPart, Position = prediction.position}}
+        end
+    else
+        hitData[1] = {{Normal = prediction.direction, Instance = hitPart, Position = prediction.position}}
+    end
+    return hitData
+end
+
+local function updateVisualsGun(target, hasWeapon)
+    if not GunSilent.Settings.Enabled.Value or not hasWeapon or not target or not target.Character then
+        if GunSilent.State.TargetVisualPart then GunSilent.State.TargetVisualPart:Destroy() GunSilent.State.TargetVisualPart = nil end
+        if GunSilent.State.HitboxVisualPart then GunSilent.State.HitboxVisualPart:Destroy() GunSilent.State.HitboxVisualPart = nil end
+        if GunSilent.State.PredictVisualPart then GunSilent.State.PredictVisualPart:Destroy() GunSilent.State.PredictVisualPart = nil end
+        if GunSilent.State.DirectionVisualPart then GunSilent.State.DirectionVisualPart:Destroy() GunSilent.State.DirectionVisualPart = nil end
+        if GunSilent.State.RealDirectionVisualPart then GunSilent.State.RealDirectionVisualPart:Destroy() GunSilent.State.RealDirectionVisualPart = nil end
+        if GunSilent.State.TrajectoryBeam then GunSilent.State.TrajectoryBeam:Destroy() GunSilent.State.TrajectoryBeam = nil end
+        if GunSilent.State.FullTrajectoryParts then
+            for _, part in pairs(GunSilent.State.FullTrajectoryParts) do part:Destroy() end
+            GunSilent.State.FullTrajectoryParts = nil
+        end
+        return
+    end
+
+    local character = GunSilent.Core.PlayerData.LocalPlayer.Character
+    if not character then return end
+    local myRoot = character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    local prediction = predictTargetPositionGun(target, true)
+    if not prediction.position or not prediction.direction then return end
+
+    if GunSilent.Settings.TargetVisual.Value then
+        local targetHead = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
+        if targetHead then
+            if not GunSilent.State.TargetVisualPart then
+                GunSilent.State.TargetVisualPart = Instance.new("Part")
+                GunSilent.State.TargetVisualPart.Size = Vector3.new(1, 1, 1)
+                GunSilent.State.TargetVisualPart.Shape = Enum.PartType.Ball
+                GunSilent.State.TargetVisualPart.Anchored = true
+                GunSilent.State.TargetVisualPart.CanCollide = false
+                GunSilent.State.TargetVisualPart.Transparency = 0.5
+                GunSilent.State.TargetVisualPart.Color = Color3.fromRGB(255, 0, 0)
+                GunSilent.State.TargetVisualPart.Parent = GunSilent.Core.Services.Workspace
+            end
+            GunSilent.State.TargetVisualPart.Position = targetHead.Position + Vector3.new(0, 3, 0)
+        end
+    else
+        if GunSilent.State.TargetVisualPart then GunSilent.State.TargetVisualPart:Destroy() GunSilent.State.TargetVisualPart = nil end
+    end
+
+    if GunSilent.Settings.HitboxVisual.Value then
+        local hitPart = GunSilent.Settings.HitPart.Value == "Random" and
+            (math.random() > 0.5 and target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("UpperTorso")) or
+            target.Character:FindFirstChild(GunSilent.Settings.HitPart.Value) or target.Character:FindFirstChild("HumanoidRootPart")
+        if hitPart then
+            if not GunSilent.State.HitboxVisualPart then
+                GunSilent.State.HitboxVisualPart = Instance.new("Part")
+                GunSilent.State.HitboxVisualPart.Anchored = true
+                GunSilent.State.HitboxVisualPart.CanCollide = false
+                GunSilent.State.HitboxVisualPart.Transparency = 0.7
+                GunSilent.State.HitboxVisualPart.Color = Color3.fromRGB(0, 255, 0)
+                GunSilent.State.HitboxVisualPart.Parent = GunSilent.Core.Services.Workspace
+            end
+            GunSilent.State.HitboxVisualPart.Size = hitPart.Size + Vector3.new(0.2, 0.2, 0.2)
+            GunSilent.State.HitboxVisualPart.CFrame = hitPart.CFrame
+        end
+    else
+        if GunSilent.State.HitboxVisualPart then GunSilent.State.HitboxVisualPart:Destroy() GunSilent.State.HitboxVisualPart = nil end
+    end
+
+    if GunSilent.Settings.PredictVisual.Value then
+        if not GunSilent.State.PredictVisualPart then
+            GunSilent.State.PredictVisualPart = Instance.new("Part")
+            GunSilent.State.PredictVisualPart.Size = Vector3.new(0.5, 0.5, 0.5)
+            GunSilent.State.PredictVisualPart.Shape = Enum.PartType.Ball
+            GunSilent.State.PredictVisualPart.Anchored = true
+            GunSilent.State.PredictVisualPart.CanCollide = false
+            GunSilent.State.PredictVisualPart.Transparency = 0.5
+            GunSilent.State.PredictVisualPart.Parent = GunSilent.Core.Services.Workspace
+        end
+        GunSilent.State.PredictVisualPart.Position = prediction.position
+        GunSilent.State.PredictVisualPart.Color = GunSilent.State.IsTeleporting and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 0, 255)
+    else
+        if GunSilent.State.PredictVisualPart then GunSilent.State.PredictVisualPart:Destroy() GunSilent.State.PredictVisualPart = nil end
+    end
+
+    if GunSilent.Settings.ShowDirection.Value then
+        local startPos = myRoot.Position + Vector3.new(0, 1.5, 0)
+        if not GunSilent.State.DirectionVisualPart then
+            GunSilent.State.DirectionVisualPart = Instance.new("Part")
+            GunSilent.State.DirectionVisualPart.Size = Vector3.new(0.2, 0.2, 5)
+            GunSilent.State.DirectionVisualPart.Anchored = true
+            GunSilent.State.DirectionVisualPart.CanCollide = false
+            GunSilent.State.DirectionVisualPart.Transparency = 0.5
+            GunSilent.State.DirectionVisualPart.Color = Color3.fromRGB(255, 255, 0)
+            GunSilent.State.DirectionVisualPart.Parent = GunSilent.Core.Services.Workspace
+        end
+        if not GunSilent.State.RealDirectionVisualPart then
+            GunSilent.State.RealDirectionVisualPart = Instance.new("Part")
+            GunSilent.State.RealDirectionVisualPart.Size = Vector3.new(0.2, 0.2, 5)
+            GunSilent.State.RealDirectionVisualPart.Anchored = true
+            GunSilent.State.RealDirectionVisualPart.CanCollide = false
+            GunSilent.State.RealDirectionVisualPart.Transparency = 0.5
+            GunSilent.State.RealDirectionVisualPart.Color = Color3.fromRGB(255, 255, 255)
+            GunSilent.State.RealDirectionVisualPart.Parent = GunSilent.Core.Services.Workspace
+        end
+        GunSilent.State.DirectionVisualPart.CFrame = CFrame.lookAt(startPos, startPos + (prediction.direction * 5))
+        GunSilent.State.DirectionVisualPart.Position = startPos + (prediction.direction * 2.5)
+        GunSilent.State.RealDirectionVisualPart.CFrame = CFrame.lookAt(startPos, startPos + (prediction.realDirection * 5))
+        GunSilent.State.RealDirectionVisualPart.Position = startPos + (prediction.realDirection * 2.5)
+    else
+        if GunSilent.State.DirectionVisualPart then GunSilent.State.DirectionVisualPart:Destroy() GunSilent.State.DirectionVisualPart = nil end
+        if GunSilent.State.RealDirectionVisualPart then GunSilent.State.RealDirectionVisualPart:Destroy() GunSilent.State.RealDirectionVisualPart = nil end
+    end
+
+    if GunSilent.Settings.PredictVisual.Value and GunSilent.Settings.ShowTrajectoryBeam then
+        if not GunSilent.State.TrajectoryBeam then
+            GunSilent.State.TrajectoryBeam = Instance.new("Beam")
+            GunSilent.State.TrajectoryBeam.FaceCamera = true
+            GunSilent.State.TrajectoryBeam.Width0 = 0.2
+            GunSilent.State.TrajectoryBeam.Width1 = 0.2
+            GunSilent.State.TrajectoryBeam.Transparency = NumberSequence.new(0.5)
+            GunSilent.State.TrajectoryBeam.Color = ColorSequence.new(Color3.fromRGB(147, 112, 219))
+            GunSilent.State.TrajectoryBeam.Parent = GunSilent.Core.Services.Workspace
+            local attachment0 = Instance.new("Attachment", myRoot)
+            local attachment1 = Instance.new("Attachment", GunSilent.State.PredictVisualPart)
+            GunSilent.State.TrajectoryBeam.Attachment0 = attachment0
+            GunSilent.State.TrajectoryBeam.Attachment1 = attachment1
+        end
+        GunSilent.State.TrajectoryBeam.Attachment0.Parent = myRoot
+        GunSilent.State.TrajectoryBeam.Attachment1.Parent = GunSilent.State.PredictVisualPart
+    else
+        if GunSilent.State.TrajectoryBeam then
+            GunSilent.State.TrajectoryBeam:Destroy()
+            GunSilent.State.TrajectoryBeam = nil
+        end
+    end
+
+    if GunSilent.Settings.PredictVisual.Value and GunSilent.Settings.ShowFullTrajectory then
+        if not GunSilent.State.FullTrajectoryParts then GunSilent.State.FullTrajectoryParts = {} end
+        for _, part in pairs(GunSilent.State.FullTrajectoryParts) do part:Destroy() end
+        GunSilent.State.FullTrajectoryParts = {}
+
+        local startPos = myRoot.Position + Vector3.new(0, 1.5, 0)
+        local bulletSpeed = 2500
+        local gravity = Vector3.new(0, -workspace.Gravity, 0)
+        local distance = (prediction.position - startPos).Magnitude
+        local distanceFactor = math.clamp(distance / 100, 0.5, 2)
+        local steps = 10
+        local stepTime = prediction.timeToTarget / steps
+
+        for i = 0, steps do
+            local t = stepTime * i
+            local pos = startPos + (prediction.direction * bulletSpeed * t) + (0.5 * gravity * t * t * distanceFactor)
+            local trajectoryPart = Instance.new("Part")
+            trajectoryPart.Size = Vector3.new(0.3, 0.3, 0.3)
+            trajectoryPart.Shape = Enum.PartType.Ball
+            trajectoryPart.Anchored = true
+            trajectoryPart.CanCollide = false
+            trajectoryPart.Transparency = 0.5
+            trajectoryPart.Color = Color3.fromRGB(255, 165, 0)
+            trajectoryPart.Position = pos
+            trajectoryPart.Parent = GunSilent.Core.Services.Workspace
+            table.insert(GunSilent.State.FullTrajectoryParts, trajectoryPart)
+        end
+    else
+        if GunSilent.State.FullTrajectoryParts then
+            for _, part in pairs(GunSilent.State.FullTrajectoryParts) do part:Destroy() end
+            GunSilent.State.FullTrajectoryParts = nil
+        end
+    end
+end
+
+local function initializeGunSilent()
+    if GunSilent.State.Connection then GunSilent.State.Connection:Disconnect() end
+    if not GunSilent.State.V_U_4 then
+        for _, obj in pairs(getgc(true)) do
+            if type(obj) == "table" and not getmetatable(obj) and obj.event and obj.func then
+                GunSilent.State.V_U_4 = obj
+                break
+            end
+        end
+    end
+
+    if not GunSilent.State.OldFireServer then
+        GunSilent.State.OldFireServer = hookfunction(game:GetService("ReplicatedStorage").Remotes.Send.FireServer, function(self, ...)
+            local args = {...}
+            if GunSilent.Settings.Enabled.Value and #args >= 2 and typeof(args[1]) == "number" and math.random(100) <= GunSilent.Settings.HitChance.Value then
+                GunSilent.State.LastEventId = args[1]
+                local equippedTool = getEquippedGunTool()
+                if equippedTool and args[2] == "shoot_gun" then
+                    local nearestPlayer = getNearestPlayerGun()
+                    if nearestPlayer then
+                        local aimCFrame = getAimCFrameGun(nearestPlayer)
+                        local hitData = createHitDataGun(nearestPlayer)
+                        if aimCFrame and hitData then
+                            args[3] = equippedTool
+                            args[4] = aimCFrame
+                            args[5] = hitData
+                        end
+                    end
+                end
+            end
+            return GunSilent.State.OldFireServer(self, unpack(args))
+        end)
+    end
+
+    GunSilent.State.Connection = GunSilent.Core.Services.RunService.Heartbeat:Connect(function(deltaTime)
+        if not GunSilent.Settings.Enabled.Value then
+            if GunSilent.State.FovCircle then
+                GunSilent.State.FovCircle:Remove()
+                GunSilent.State.FovCircle = nil
+            end
+            return
+        end
+
+        local currentTime = tick()
+        local currentTool = getEquippedGunTool()
+        if currentTool ~= GunSilent.State.LastTool then
+            if currentTool and not GunSilent.State.LastTool then
+                local range = getGunRange(currentTool)
+                local baseRange = currentTool:GetAttribute("Range") or 50
+                GunSilent.notify("GunSilent", "Equipped: " .. currentTool.Name .. " (Base Range: " .. baseRange .. ", Total Range: " .. range .. ")", true)
+            elseif GunSilent.State.LastTool and not currentTool then
+                GunSilent.notify("GunSilent", "Unequipped: " .. GunSilent.State.LastTool.Name, true)
+            elseif currentTool and GunSilent.State.LastTool then
+                local oldRange = getGunRange(GunSilent.State.LastTool)
+                local newRange = getGunRange(currentTool)
+                GunSilent.notify("GunSilent", "Switched from " .. GunSilent.State.LastTool.Name .. " (Range: " .. oldRange .. ") to " .. currentTool.Name .. " (Range: " .. newRange .. ")", true)
+            end
+            GunSilent.State.LastTool = currentTool
+        end
+
+        local nearestPlayer = getNearestPlayerGun()
+        updateVisualsGun(nearestPlayer, currentTool ~= nil)
+        updateFovCircle(deltaTime)
+
+        if GunSilent.Settings.Rage.Value and GunSilent.State.V_U_4 and currentTool and nearestPlayer then
+            local aimCFrame = getAimCFrameGun(nearestPlayer)
+            local hitData = createHitDataGun(nearestPlayer)
+            if aimCFrame and hitData then
+                GunSilent.State.V_U_4.event = GunSilent.State.V_U_4.event + 1
+                game:GetService("ReplicatedStorage").Remotes.Send:FireServer(GunSilent.State.V_U_4.event, "shoot_gun", currentTool, aimCFrame, hitData)
+            end
+        end
+    end)
+end
 
 local function Init(UI, Core, notify)
     GunSilent.Core = Core
     GunSilent.notify = notify
 
-    -- Инициализируем Watermark только один раз
     if GunSilent.Watermark and GunSilent.Watermark.Init and not _G.WatermarkInitialized then
         GunSilent.Watermark.Init(UI, Core, notify)
-        _G.WatermarkInitialized = true -- Устанавливаем флаг, чтобы избежать повторной инициализации
+        _G.WatermarkInitialized = true
     end
 
     if UI.Tabs.Combat then
